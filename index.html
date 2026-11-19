@@ -1,67 +1,3110 @@
-<!doctype html>
-<html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<meta name="theme-color" content="#f7f8fa"><link rel="manifest" href="./manifest.webmanifest">
-<title>RoughSpace — Infinite Notebook</title>
-<style>
-*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#f8fafc;font-family:system-ui,-apple-system,Segoe UI,sans-serif;touch-action:none}canvas{width:100%;height:100%;display:block;touch-action:none}
-.panel{background:#ffffffed;border:1px solid #dce2eb;border-radius:15px;box-shadow:0 5px 22px #18223020;backdrop-filter:blur(14px)}
-#top{position:fixed;top:calc(env(safe-area-inset-top) + 9px);left:9px;right:9px;display:flex;gap:7px;align-items:center;pointer-events:none}#top>*{pointer-events:auto}.group{display:flex;align-items:center;padding:4px;gap:3px}.btn{border:0;background:transparent;color:#263449;border-radius:11px;min-width:39px;height:39px;font-size:17px}.btn:active{background:#eaf0fb}.brand{font-weight:750;font-size:14px;padding:0 7px}.readout{font-size:11px;color:#637087;padding:0 8px}
-#tools{position:fixed;bottom:calc(env(safe-area-inset-bottom) + 10px);left:50%;transform:translateX(-50%);display:flex;gap:3px;padding:5px;max-width:calc(100vw - 12px);overflow-x:auto}.tool{border:0;background:transparent;border-radius:12px;min-width:46px;height:48px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:9px;color:#45536a;gap:1px}.tool b{font-size:18px}.tool.active{background:#e8efff;color:#174bc4}
-#drawer{position:fixed;z-index:3;top:calc(env(safe-area-inset-top) + 60px);bottom:calc(env(safe-area-inset-bottom) + 70px);left:9px;width:min(300px,calc(100vw - 18px));padding:14px;overflow:auto;transform:translateX(-115%);transition:.2s}#drawer.open{transform:translateX(0)}.section{padding:11px 0;border-bottom:1px solid #e7ebf1}.section:last-child{border:0}.heading{font-size:10px;letter-spacing:1px;color:#8792a3;font-weight:800;margin:0 0 9px}.actions{display:flex;gap:7px;flex-wrap:wrap}.action{border:0;border-radius:10px;background:#eef2f7;padding:9px 11px;font-size:12px;color:#253247}.swatch{width:26px;height:26px;border-radius:50%;border:2px solid white;box-shadow:0 0 0 1px #cbd5e1}.swatch.active{box-shadow:0 0 0 2px #2563eb}input[type=range]{width:100%}select{padding:8px;border:1px solid #dce2eb;border-radius:9px;background:white}#file{display:none}
-</style></head><body>
-<canvas id="c"></canvas>
-<div id="top"><div class="panel group"><button class="btn" id="menu">☰</button><span class="brand">RoughSpace</span></div><div class="panel group" style="margin-left:auto"><button class="btn" id="undo">↶</button><button class="btn" id="redo">↷</button><span class="readout" id="zoom">100%</span></div></div>
-<div id="tools" class="panel">
-<button class="tool active" data-tool="pen"><b>✎</b>Pen</button><button class="tool" data-tool="pencil"><b>✐</b>Pencil</button><button class="tool" data-tool="marker"><b>▰</b>Marker</button><button class="tool" data-tool="eraser"><b>▱</b>Eraser</button><button class="tool" data-tool="area"><b>◯</b>Area</button><button class="tool" data-tool="hand"><b>✋</b>Move</button>
-</div>
-<aside id="drawer" class="panel">
-<div class="actions" style="justify-content:space-between;align-items:center"><strong>Notebook settings</strong><button class="btn" id="close">×</button></div>
-<div class="section"><p class="heading">INK COLOUR</p><div class="actions" id="palette"><button class="swatch active" style="background:#172033" data-color="#172033"></button><button class="swatch" style="background:#2563eb" data-color="#2563eb"></button><button class="swatch" style="background:#dc2626" data-color="#dc2626"></button><button class="swatch" style="background:#059669" data-color="#059669"></button><button class="swatch" style="background:#7c3aed" data-color="#7c3aed"></button><button class="swatch" style="background:#ea580c" data-color="#ea580c"></button></div></div>
-<div class="section"><p class="heading">STROKE WIDTH</p><input id="width" type="range" min="1" max="24" value="3"><span id="widthval">3 px</span></div>
-<div class="section"><p class="heading">PAPER</p><div class="actions"><select id="paper"><option value="grid">Faint grid</option><option value="dots">Dots</option><option value="ruled">Ruled</option><option value="blank">Blank</option></select><select id="theme"><option value="#ffffff">White</option><option value="#fffaf0">Cream</option><option value="#171c28">Dark</option></select></div></div>
-<div class="section"><p class="heading">IMPORT / EXPORT</p><div class="actions"><button class="action" id="import">Add image</button><button class="action" id="png">Export PNG</button><button class="action" id="backup">Backup JSON</button><button class="action" id="restore">Restore JSON</button></div><p style="font-size:11px;color:#69778b;line-height:1.5">Your notes are stored in this browser on this device. Back up regularly. Imported images are stored locally.</p></div>
-<div class="section"><p class="heading">VIEW</p><div class="actions"><button class="action" id="reset">Reset zoom</button><button class="action" id="clear">Clear sheet</button></div></div>
-<input id="file" type="file" accept="image/*">
-</aside>
-<script>
-(()=>{
-const c=document.getElementById('c'),x=c.getContext('2d'),$=id=>document.getElementById(id);
-let dpr=1,W=innerWidth,H=innerHeight,cam={x:0,y:0,s:1},tool='pen',color='#172033',width=3,items=[],history=[],future=[],active=null,pointers=new Map(),gesture=null,theme='#ffffff',paper='grid';
-const key='roughspace-data-v1',clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-function save(){try{localStorage.setItem(key,JSON.stringify({items,cam,theme,paper}));}catch(e){alert('Storage is full. Export a backup and remove large images.');}}
-function load(){try{const a=JSON.parse(localStorage.getItem(key)||'{}');items=a.items||[];cam=a.cam||cam;theme=a.theme||theme;paper=a.paper||paper;}catch(e){}}
-function snap(){history.push(JSON.stringify(items));if(history.length>60)history.shift();future=[]}
-function undo(){if(!history.length)return;future.push(JSON.stringify(items));items=JSON.parse(history.pop());draw()}
-function redo(){if(!future.length)return;history.push(JSON.stringify(items));items=JSON.parse(future.pop());draw()}
-function world(px,py){return{x:px/cam.s+cam.x,y:py/cam.s+cam.y}}
-function screen(p){return{x:(p.x-cam.x)*cam.s,y:(p.y-cam.y)*cam.s}}
-function resize(){dpr=Math.min(devicePixelRatio||1,3);W=innerWidth;H=innerHeight;c.width=W*dpr;c.height=H*dpr;c.style.width=W+'px';c.style.height=H+'px';x.setTransform(dpr,0,0,dpr,0,0);draw()}
-function background(){x.fillStyle=theme;x.fillRect(0,0,W,H);if(paper==='blank')return;const step=28*cam.s;if(step<5)return;const ox=(( -cam.x*cam.s)%step+step)%step,oy=(( -cam.y*cam.s)%step+step)%step;x.save();x.strokeStyle=theme==='#171c28'?'#ffffff16':'#aab4c322';x.fillStyle=theme==='#171c28'?'#ffffff28':'#8b98aa55';x.lineWidth=1;if(paper==='dots'){for(let a=ox;a<W;a+=step)for(let b=oy;b<H;b+=step){x.beginPath();x.arc(a,b,1,0,Math.PI*2);x.fill()}}else if(paper==='ruled'){for(let b=oy;b<H;b+=step){x.beginPath();x.moveTo(0,b);x.lineTo(W,b);x.stroke()}}else{for(let a=ox;a<W;a+=step){x.beginPath();x.moveTo(a,0);x.lineTo(a,H);x.stroke()}for(let b=oy;b<H;b+=step){x.beginPath();x.moveTo(0,b);x.lineTo(W,b);x.stroke()}}x.restore()}
-function drawItem(i){if(i.type==='image'){const im=new Image();im.onload=()=>{const p=screen({x:i.x,y:i.y});x.drawImage(im,p.x,p.y,i.w*cam.s,i.h*cam.s)};im.src=i.src;return}if(!i.points?.length)return;x.save();x.globalAlpha=i.alpha??1;x.strokeStyle=i.color;x.lineWidth=i.width*cam.s;x.lineCap='round';x.lineJoin='round';if(i.tool==='pencil'){x.globalAlpha=.55;x.lineWidth=Math.max(.7,i.width*.65)*cam.s}x.beginPath();const p=screen(i.points[0]);x.moveTo(p.x,p.y);for(let k=1;k<i.points.length;k++){const q=screen(i.points[k]);x.lineTo(q.x,q.y)}if(i.points.length===1)x.lineTo(p.x+.1,p.y+.1);x.stroke();x.restore()}
-function draw(){background();items.forEach(drawItem);if(active){drawItem(active)}$('zoom').textContent=Math.round(cam.s*100)+'%'}
-function commit(){save();draw()}
-function setTool(t){tool=t;document.querySelectorAll('.tool').forEach(b=>b.classList.toggle('active',b.dataset.tool===t))}
-document.querySelectorAll('.tool').forEach(b=>b.onclick=()=>setTool(b.dataset.tool));
-$('menu').onclick=()=>$('drawer').classList.toggle('open');$('close').onclick=()=>$('drawer').classList.remove('open');
-$('undo').onclick=undo;$('redo').onclick=redo;
-$('palette').onclick=e=>{const b=e.target.closest('[data-color]');if(!b)return;color=b.dataset.color;document.querySelectorAll('.swatch').forEach(z=>z.classList.toggle('active',z===b))};
-$('width').oninput=e=>{width=+e.target.value;$('widthval').textContent=width+' px'};
-$('paper').onchange=e=>{paper=e.target.value;commit()};$('theme').onchange=e=>{theme=e.target.value;commit()};
-$('reset').onclick=()=>{cam={x:0,y:0,s:1};commit()};
-$('clear').onclick=()=>{if(confirm('Clear all writing and images on this sheet?')){snap();items=[];commit()}};
-function eraseAt(p,r){items=items.filter(i=>{if(i.type==='image')return !(p.x>=i.x&&p.x<=i.x+i.w&&p.y>=i.y&&p.y<=i.y+i.h);return !i.points?.some(q=>Math.hypot(q.x-p.x,q.y-p.y)<r)})}
-function pointerDown(e){e.preventDefault();c.setPointerCapture(e.pointerId);pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===2){active=null;const a=[...pointers.values()];gesture={dist:Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y),scale:cam.s,mid:{x:(a[0].x+a[1].x)/2,y:(a[0].y+a[1].y)/2},anchor:world((a[0].x+a[1].x)/2,(a[0].y+a[1].y)/2)};return}if(pointers.size>1)return;const p=world(e.clientX,e.clientY);if(tool==='hand'){gesture={x:e.clientX,y:e.clientY,cx:cam.x,cy:cam.y};return}if(tool==='eraser'||tool==='area'){snap();eraseAt(p,(tool==='area'?38:width*2)/cam.s);commit();return}snap();active={type:'stroke',tool,color,width,alpha:tool==='marker'?.25:tool==='pencil'?.65:1,points:[p]};draw()}
-function pointerMove(e){if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===2&&gesture){const a=[...pointers.values()],mid={x:(a[0].x+a[1].x)/2,y:(a[0].y+a[1].y)/2},dist=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);cam.s=clamp(gesture.scale*dist/Math.max(1,gesture.dist),.25,6);cam.x=gesture.anchor.x-mid.x/cam.s;cam.y=gesture.anchor.y-mid.y/cam.s;draw();return}if(tool==='hand'&&gesture){cam.x=gesture.cx-(e.clientX-gesture.x)/cam.s;cam.y=gesture.cy-(e.clientY-gesture.y)/cam.s;draw();return}if(active){active.points.push(world(e.clientX,e.clientY));draw()}}
-function pointerUp(e){pointers.delete(e.pointerId);if(pointers.size<2)gesture=null;if(active&&pointers.size===0){items.push(active);active=null;save();draw()}else if(tool==='hand'&&pointers.size===0){gesture=null;save()}}
-c.addEventListener('pointerdown',pointerDown);c.addEventListener('pointermove',pointerMove);c.addEventListener('pointerup',pointerUp);c.addEventListener('pointercancel',pointerUp);
-c.addEventListener('wheel',e=>{e.preventDefault();const p=world(e.clientX,e.clientY),s=clamp(cam.s*Math.exp(-e.deltaY*.001),.25,6);cam.s=s;cam.x=p.x-e.clientX/s;cam.y=p.y-e.clientY/s;draw()},{passive:false});
-$('import').onclick=()=>$('file').click();$('file').onchange=async e=>{const f=e.target.files[0];if(!f)return;const src=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f)});const im=new Image();im.onload=()=>{snap();const p=world(W/2,H/2),s=Math.min(1,W*.8/im.width);items.push({type:'image',src,x:p.x-im.width*s/2,y:p.y-im.height*s/2,w:im.width*s,h:im.height*s});commit()};im.src=src;e.target.value=''};
-$('png').onclick=()=>{const a=document.createElement('a');a.href=c.toDataURL('image/png');a.download='roughspace.png';a.click()};
-$('backup').onclick=()=>{const a=document.createElement('a'),u=URL.createObjectURL(new Blob([JSON.stringify({items,cam,theme,paper})],{type:'application/json'}));a.href=u;a.download='roughspace-backup.json';a.click();URL.revokeObjectURL(u)};
-$('restore').onclick=()=>{const f=document.createElement('input');f.type='file';f.accept='application/json';f.onchange=async()=>{try{const a=JSON.parse(await f.files[0].text());snap();items=a.items||[];cam=a.cam||cam;theme=a.theme||theme;paper=a.paper||paper;commit()}catch(e){alert('Invalid backup file')}};f.click()};
-document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();e.shiftKey?redo():undo()}});
-load();$('paper').value=paper;$('theme').value=theme;resize();addEventListener('resize',resize);
-if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
-})();
-</script></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#ffffff" id="metaThemeColor" />
+  <title>RoughSheet — Infinite Canvas & PDF Annotator</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Inter Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- PDF.js & jsPDF CDNs (Safely checked at runtime so offline drawing always works) -->
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <style>
+    /* Core Fullscreen & Mobile Touch Lock */
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100dvh;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background-color: #ffffff;
+    }
+
+    #canvasContainer {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100dvh;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: none;
+    }
+
+    #staticCanvas,
+    #activeCanvas {
+      position: absolute;
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
+
+    #staticCanvas {
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    #activeCanvas {
+      pointer-events: auto;
+      z-index: 2;
+      cursor: crosshair;
+    }
+
+    /* Safe-area spacing for notched/curved mobile screens */
+    .safe-top-left {
+      top: calc(env(safe-area-inset-top, 0px) + 12px);
+      left: calc(env(safe-area-inset-left, 0px) + 12px);
+    }
+    .safe-top-right {
+      top: calc(env(safe-area-inset-top, 0px) + 12px);
+      right: calc(env(safe-area-inset-right, 0px) + 12px);
+    }
+    .safe-bottom-right {
+      bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+      right: calc(env(safe-area-inset-right, 0px) + 12px);
+    }
+    .safe-bottom-center {
+      bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+    }
+    .drawer-safe {
+      top: calc(env(safe-area-inset-top, 0px) + 10px);
+      bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+      left: calc(env(safe-area-inset-left, 0px) + 10px);
+    }
+
+    /* Glassmorphic UI Styling */
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.90);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(15, 23, 42, 0.10);
+      box-shadow: 0 10px 30px -6px rgba(15, 23, 42, 0.14), 0 2px 6px -1px rgba(15, 23, 42, 0.06);
+    }
+
+    .dark-ui .glass-panel {
+      background: rgba(24, 31, 44, 0.90);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #f1f5f9;
+      box-shadow: 0 12px 32px -6px rgba(0, 0, 0, 0.45);
+    }
+
+    /* Drawer Smooth Slide */
+    #toolDrawer {
+      transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s ease;
+      transform: translateX(-115%);
+      opacity: 0;
+      pointer-events: none;
+    }
+    #toolDrawer.open {
+      transform: translateX(0);
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .drawer-scroll::-webkit-scrollbar {
+      width: 4px;
+    }
+    .drawer-scroll::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.4);
+      border-radius: 999px;
+    }
+
+    /* Active tool highlight */
+    .tool-btn {
+      transition: transform 0.1s ease, background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    }
+    .tool-btn:active {
+      transform: scale(0.95);
+    }
+    .tool-btn.active {
+      background-color: #2563eb;
+      color: #ffffff;
+      border-color: #2563eb;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.28);
+    }
+    .dark-ui .tool-btn:not(.active) {
+      background-color: rgba(255, 255, 255, 0.06);
+      color: #e2e8f0;
+      border-color: rgba(255, 255, 255, 0.08);
+    }
+
+    input[type="range"] {
+      accent-color: #2563eb;
+    }
+  </style>
+</head>
+<body id="appBody">
+  <!-- Dual-Canvas Architecture: Static Layer (bottom) + Transparent Active Overlay (top) -->
+  <div id="canvasContainer">
+    <canvas id="staticCanvas"></canvas>
+    <canvas id="activeCanvas"></canvas>
+  </div>
+
+  <!-- Minimal Floating Top-Left Pill (Always accessible even when drawer is collapsed) -->
+  <div id="floatingTopBar" class="fixed safe-top-left z-30 flex items-center gap-1.5">
+    <button id="drawerToggleBtn" title="Open Tools Drawer"
+      class="glass-panel h-11 px-3 rounded-2xl flex items-center gap-2 text-slate-800 hover:bg-white/95 active:scale-95 transition">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h10" />
+      </svg>
+      <span id="activeToolIndicator" class="w-2.5 h-2.5 rounded-full bg-blue-600 ring-2 ring-blue-600/25"></span>
+    </button>
+
+    <div class="glass-panel h-11 px-1 rounded-2xl flex items-center gap-0.5">
+      <button id="quickUndoBtn" title="Undo (Ctrl+Z)"
+        class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-700 hover:bg-slate-200/60 active:scale-90 transition disabled:opacity-30">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 14L4 9l5-5" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M20 20v-7a4 4 0 00-4-4H4" />
+        </svg>
+      </button>
+      <button id="quickRedoBtn" title="Redo (Ctrl+Y)"
+        class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-700 hover:bg-slate-200/60 active:scale-90 transition disabled:opacity-30">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 14l5-5-5-5" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 20v-7a4 4 0 014-4h12" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- 1-Tap Fullscreen Auto-Restore Pill (Shown if mobile Chrome exits fullscreen after file dialog) -->
+  <div id="restoreFullscreenPill" class="hidden fixed safe-top-right z-40 glass-panel pl-3 pr-1.5 py-1.5 rounded-2xl flex items-center gap-1.5">
+    <button id="restoreFullscreenBtn" class="text-xs font-semibold text-blue-600 hover:text-blue-700 active:scale-95 transition flex items-center gap-1.5">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4" />
+      </svg>
+      Restore Fullscreen
+    </button>
+    <button id="dismissFullscreenPillBtn" title="Dismiss" class="w-6 h-6 rounded-xl flex items-center justify-center text-slate-400 hover:bg-slate-200/60 transition">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </button>
+  </div>
+
+  <!-- Floating Lasso Selection Quick Actions (Shown only when items are selected) -->
+  <div id="selectionBar" class="hidden fixed safe-bottom-center left-1/2 -translate-x-1/2 z-30 glass-panel px-2 py-1.5 rounded-2xl flex items-center gap-1.5">
+    <span id="selectionCountLabel" class="text-xs font-semibold px-2 text-slate-600">0 selected</span>
+    <button id="selDuplicateBtn" class="px-3 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 active:scale-95 transition">
+      Duplicate
+    </button>
+    <button id="selDeleteBtn" class="px-3 py-1.5 rounded-xl bg-rose-500 text-white text-xs font-semibold hover:bg-rose-600 active:scale-95 transition">
+      Delete
+    </button>
+    <button id="selDoneBtn" class="px-2.5 py-1.5 rounded-xl bg-slate-200/80 text-slate-700 text-xs font-semibold hover:bg-slate-300/80 active:scale-95 transition">
+      Done
+    </button>
+  </div>
+
+  <!-- Screenshot Crop Mode Bar -->
+  <div id="screenshotBar" class="hidden fixed safe-top-right z-40 glass-panel px-3 py-2 rounded-2xl flex flex-wrap items-center gap-2 max-w-[92vw]">
+    <span class="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+      <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+      Drag to crop
+    </span>
+    <button id="snapFullBtn" class="px-3 py-1.5 rounded-xl bg-slate-800 text-white text-xs font-semibold hover:bg-slate-900 active:scale-95 transition">
+      Snap Full Screen
+    </button>
+    <button id="snapConfirmBtn" class="hidden px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 active:scale-95 transition">
+      Save PNG
+    </button>
+    <button id="snapCancelBtn" class="px-2.5 py-1.5 rounded-xl bg-rose-100 text-rose-700 text-xs font-semibold hover:bg-rose-200 active:scale-95 transition">
+      Cancel
+    </button>
+  </div>
+
+  <!-- Backdrop to close drawer when tapping canvas -->
+  <div id="drawerBackdrop" class="hidden fixed inset-0 z-30 bg-slate-900/15 backdrop-blur-[1px]"></div>
+
+  <!-- Collapsible Side Tool Drawer -->
+  <aside id="toolDrawer" class="fixed drawer-safe z-40 w-[296px] max-w-[86vw] glass-panel rounded-3xl flex flex-col overflow-hidden">
+    <!-- Drawer Header -->
+    <div class="px-4 py-3 border-b border-slate-200/70 flex items-center justify-between shrink-0">
+      <div class="flex items-center gap-2 min-w-0">
+        <div class="w-7 h-7 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-sm shadow-sm">R</div>
+        <div class="truncate">
+          <h1 class="text-sm font-bold leading-tight truncate">RoughSheet</h1>
+          <p id="saveStatusText" class="text-[10px] text-slate-500 font-medium">Saved locally</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-1">
+        <button id="fullscreenBtn" title="Toggle Fullscreen"
+          class="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-slate-200/60 active:scale-90 transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4" />
+          </svg>
+        </button>
+        <button id="closeDrawerBtn" title="Hide Drawer"
+          class="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-slate-200/60 active:scale-90 transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Scrollable Drawer Content -->
+    <div class="drawer-scroll flex-1 overflow-y-auto px-3.5 py-3 space-y-4">
+
+      <!-- Section 1: Multi-Sheet Switcher -->
+      <section>
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Sheets</span>
+          <div class="flex items-center gap-1">
+            <button id="renameSheetBtn" title="Rename Sheet" class="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition">Rename</button>
+            <button id="newSheetBtn" title="New Blank Sheet" class="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition">+ New</button>
+          </div>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <select id="sheetSelect" class="flex-1 text-xs font-semibold rounded-xl px-2.5 py-2 bg-slate-100/90 border border-slate-200/80 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/40"></select>
+          <button id="deleteSheetBtn" title="Delete Current Sheet" class="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 flex items-center justify-center shrink-0 transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4h6v3M4 7h16" />
+            </svg>
+          </button>
+        </div>
+      </section>
+
+      <!-- Section 2: Primary Tools -->
+      <section>
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Tools</span>
+          <span class="text-[10px] text-slate-400">Hold pen 0.5s to snap</span>
+        </div>
+        <div class="grid grid-cols-4 gap-1.5">
+          <button data-tool="pen" class="tool-btn active flex flex-col items-center justify-center gap-1 py-2 rounded-2xl border border-slate-200/80 bg-white/70 text-[10px] font-semibold">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 3.487a2.1 2.1 0 112.97 2.97L7.5 18.79l-4 1 1-4L16.862 3.487z" />
+            </svg>
+            Pen
+          </button>
+          <button data-tool="shape" class="tool-btn flex flex-col items-center justify-center gap-1 py-2 rounded-2xl border border-slate-200/80 bg-white/70 text-[10px] font-semibold">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <circle cx="9" cy="9" r="5" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M14 14h6v6h-6z" />
+            </svg>
+            Shape
+          </button>
+          <button data-tool="highlighter" class="tool-btn flex flex-col items-center justify-center gap-1 py-2 rounded-2xl border border-slate-200/80 bg-white/70 text-[10px] font-semibold">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 11l-6 6v3h3l6-6m-3-3l6-6 3 3-6 6m-3-3l3 3" />
+            </svg>
+            Mark
+          </button>
+          <button data-tool="touch-eraser" class="tool-btn flex flex-col items-center justify-center gap-1 py-2 rounded-2xl border border-slate-200/80 bg-white/70 text-[10px] font-semibold">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M20 20H7L3 16c-.8-.8-.8-2 0-2.8L13.4 2.8c.8-.8 2-.8 2.8 0l5 5c.8.8.8 2 0 2.8L12 20" />
+            </svg>
+            Touch
+          </button>
+          <button data-tool="circle-eraser" class="tool-btn flex flex-col items-center justify-center gap-1 py-2 rounded-2xl border border-slate-200/80 bg-white/70 text-[10px] font-semibold">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="8" />
+              <path stroke-dasharray="none" stroke-linecap="round" d="M9 9l6 6M15 9l-6 6" />
+            </svg>
+            CircleX
+          </button>
+          <button data-tool="lasso" class="tool-btn flex flex-col items-center justify-center gap-1 py-2 rounded-2xl border border-slate-200/80 bg-white/70 text-[10px] font-semibold">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-dasharray="3 2" stroke-linecap="round" d="M12 4c5 0 8 3 8 7s-3 7-8 7-8-3-8-7 3-7 8-7z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 18v3m0 0l-2-1.5M12 21l2-1.5" />
+            </svg>
+            Shift
+          </button>
+          <button data-tool="pan" class="tool-btn flex flex-col items-center justify-center gap-1 py-2 rounded-2xl border border-slate-200/80 bg-white/70 text-[10px] font-semibold">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v18M3 12h18M12 3l-3 3m3-3l3 3M12 21l-3-3m3 3l3-3M3 12l3-3m-3 3l3 3M21 12l-3-3m3 3l-3 3" />
+            </svg>
+            Pan
+          </button>
+          <button data-tool="screenshot" class="tool-btn flex flex-col items-center justify-center gap-1 py-2 rounded-2xl border border-slate-200/80 bg-white/70 text-[10px] font-semibold">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 7V5a1 1 0 011-1h2m10 0h2a1 1 0 011 1v2m0 10v2a1 1 0 01-1 1h-2M7 20H5a1 1 0 01-1-1v-2" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+            Snap
+          </button>
+        </div>
+      </section>
+
+      <!-- Section 3: Ink Color & Thickness -->
+      <section>
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Ink & Size</span>
+          <span id="sizeValueLabel" class="text-[11px] font-semibold text-slate-500">3.0 px</span>
+        </div>
+        <div class="flex items-center justify-between gap-1.5 mb-2.5" id="colorPalette">
+          <button data-color="auto" title="Auto Black/White" class="color-swatch w-7 h-7 rounded-full border-2 border-blue-600 ring-2 ring-blue-500/30 bg-slate-900 relative overflow-hidden">
+            <span class="absolute inset-y-0 right-0 w-1/2 bg-white"></span>
+          </button>
+          <button data-color="#2563eb" title="Royal Blue" class="color-swatch w-7 h-7 rounded-full border-2 border-white shadow-sm bg-[#2563eb]"></button>
+          <button data-color="#dc2626" title="Crimson Red" class="color-swatch w-7 h-7 rounded-full border-2 border-white shadow-sm bg-[#dc2626]"></button>
+          <button data-color="#059669" title="Emerald Green" class="color-swatch w-7 h-7 rounded-full border-2 border-white shadow-sm bg-[#059669]"></button>
+          <button data-color="#7c3aed" title="Purple" class="color-swatch w-7 h-7 rounded-full border-2 border-white shadow-sm bg-[#7c3aed]"></button>
+          <button data-color="#ea580c" title="Orange" class="color-swatch w-7 h-7 rounded-full border-2 border-white shadow-sm bg-[#ea580c]"></button>
+          <button data-color="#eab308" title="Highlighter Yellow" class="color-swatch w-7 h-7 rounded-full border-2 border-white shadow-sm bg-[#eab308]"></button>
+        </div>
+        <div class="flex items-center gap-3">
+          <input id="strokeSizeSlider" type="range" min="1" max="24" step="0.5" value="3" class="flex-1 h-1.5 rounded-lg cursor-pointer" />
+          <div class="w-7 h-7 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
+            <span id="sizeDotPreview" class="rounded-full bg-slate-900 block" style="width: 6px; height: 6px;"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 4: Canvas, Grid & View -->
+      <section class="space-y-2.5">
+        <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">Sheet & View</span>
+
+        <!-- Grid Style -->
+        <div class="grid grid-cols-4 gap-1 bg-slate-100/80 p-1 rounded-xl" id="gridSelector">
+          <button data-grid="grid" class="grid-btn py-1.5 rounded-lg text-[11px] font-semibold bg-white shadow-sm text-slate-900">Grid</button>
+          <button data-grid="dots" class="grid-btn py-1.5 rounded-lg text-[11px] font-semibold text-slate-500">Dots</button>
+          <button data-grid="ruled" class="grid-btn py-1.5 rounded-lg text-[11px] font-semibold text-slate-500">Ruled</button>
+          <button data-grid="blank" class="grid-btn py-1.5 rounded-lg text-[11px] font-semibold text-slate-500">Blank</button>
+        </div>
+
+        <!-- Paper Theme -->
+        <div class="grid grid-cols-3 gap-1.5" id="themeSelector">
+          <button data-theme="white" class="theme-btn py-1.5 rounded-xl border-2 border-blue-600 bg-white text-slate-900 text-[11px] font-semibold">White</button>
+          <button data-theme="cream" class="theme-btn py-1.5 rounded-xl border border-amber-200 bg-[#fbf7ee] text-amber-950 text-[11px] font-semibold">Cream</button>
+          <button data-theme="dark" class="theme-btn py-1.5 rounded-xl border border-slate-700 bg-slate-900 text-slate-100 text-[11px] font-semibold">Dark</button>
+        </div>
+
+        <!-- Lock Media + View Controls -->
+        <div class="flex items-center justify-between px-2.5 py-2 rounded-xl bg-slate-100/70">
+          <div>
+            <div class="text-xs font-semibold">Lock PDF / Images</div>
+            <div class="text-[10px] text-slate-500">Protect from eraser & lasso</div>
+          </div>
+          <button id="lockMediaToggle" class="w-11 h-6 rounded-full bg-blue-600 p-0.5 transition flex items-center justify-end">
+            <span class="w-5 h-5 rounded-full bg-white shadow-sm block"></span>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-2 gap-1.5">
+          <button id="jumpContentBtn" class="py-2 px-2.5 rounded-xl bg-slate-100/80 hover:bg-slate-200/70 text-xs font-semibold flex items-center justify-center gap-1.5 transition">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="3" />
+              <path stroke-linecap="round" d="M12 2v4m0 12v4M2 12h4m12 0h4" />
+            </svg>
+            Jump to Work
+          </button>
+          <button id="resetZoomBtn" class="py-2 px-2.5 rounded-xl bg-slate-100/80 hover:bg-slate-200/70 text-xs font-semibold flex items-center justify-center gap-1.5 transition">
+            Zoom: <span id="zoomPercentLabel">100%</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Section 5: Media, Export & Backup -->
+      <section class="space-y-1.5 pb-2">
+        <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Import & Export</span>
+
+        <input type="file" id="mediaUploadInput" accept="image/*,application/pdf" class="hidden" />
+        <input type="file" id="jsonRestoreInput" accept="application/json,.json" class="hidden" />
+
+        <button id="importMediaBtn" class="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-sm active:scale-[0.98] transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5-5m0 0l5 5m-5-5v12" />
+          </svg>
+          Import Image or PDF
+        </button>
+
+        <button id="openExportPdfBtn" class="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-sm active:scale-[0.98] transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M6 20h12a2 2 0 002-2V8l-6-6H6a2 2 0 00-2 2v14a2 2 0 002 2z" />
+          </svg>
+          Export to PDF
+        </button>
+
+        <div class="grid grid-cols-2 gap-1.5 pt-1">
+          <button id="backupJsonBtn" class="py-2 rounded-xl bg-slate-100/80 hover:bg-slate-200/70 text-[11px] font-semibold transition">
+            Backup JSON
+          </button>
+          <button id="restoreJsonBtn" class="py-2 rounded-xl bg-slate-100/80 hover:bg-slate-200/70 text-[11px] font-semibold transition">
+            Restore JSON
+          </button>
+        </div>
+
+        <button id="clearSheetBtn" class="w-full py-2 mt-1 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-semibold transition">
+          Clear Current Sheet
+        </button>
+      </section>
+    </div>
+  </aside>
+
+  <!-- Custom Modal Dialog (Never uses browser alert/confirm/prompt) -->
+  <div id="modalOverlay" class="hidden fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+    <div id="modalCard" class="glass-panel w-full max-w-sm rounded-3xl p-5 space-y-4">
+      <h2 id="modalTitle" class="text-base font-bold">Dialog</h2>
+      <div id="modalBody" class="text-sm text-slate-600"></div>
+      <div id="modalActions" class="flex items-center justify-end gap-2 pt-1"></div>
+    </div>
+  </div>
+
+  <!-- Non-blocking Toast Notification -->
+  <div id="toastContainer" class="fixed safe-bottom-right z-50 pointer-events-none flex flex-col items-end gap-2"></div>
+
+  <script>
+    /**
+     * ============================================================================
+     * ROUGHSHEET — DUAL-CANVAS INFINITE VECTOR & PDF ANNOTATION ENGINE
+     * ============================================================================
+     * 1. Inline Web App Manifest (Chrome Add-to-Home-Screen readiness)
+     * 2. IndexedDB Persistence Layer (with graceful in-memory fallback)
+     * 3. Dual-Canvas Rendering (#staticCanvas + #activeCanvas) with Spatial Culling
+     * 4. Zero-Drop Pointer Handling (immediate draw + 80ms 2-finger pinch cancel)
+     * 5. Smart Shape Recognition (550ms hold OR Shape tool + 1-tap Revert Snap)
+     * 6. Dual Eraser (Touch whole-stroke + Segment-aware Circle/Lasso Eraser)
+     * 7. Tap-to-Select & Lasso Select/Move/Resize/Duplicate
+     * 8. PDF.js High-DPI Importer (page range picker), Screenshot Cropper & jsPDF Export
+     */
+    (() => {
+      'use strict';
+
+      // --------------------------------------------------------------------------
+      // 1. INLINE WEB APP MANIFEST (CHROME HOME SCREEN)
+      // --------------------------------------------------------------------------
+      (function injectManifest() {
+        try {
+          const iconSvg =
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">' +
+            '<rect width="192" height="192" rx="44" fill="#2563eb"/>' +
+            '<path d="M56 136l16-48 56-56 32 32-56 56-48 16z" fill="#ffffff"/>' +
+            '</svg>';
+          const iconUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(iconSvg);
+          const manifest = {
+            name: 'RoughSheet — Infinite Canvas',
+            short_name: 'RoughSheet',
+            start_url: '.',
+            display: 'standalone',
+            background_color: '#ffffff',
+            theme_color: '#2563eb',
+            icons: [{ src: iconUrl, sizes: '192x192', type: 'image/svg+xml' }]
+          };
+          const blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+          const link = document.createElement('link');
+          link.rel = 'manifest';
+          link.href = URL.createObjectURL(blob);
+          document.head.appendChild(link);
+        } catch (_) {
+          // Ignore in restricted iframe environments
+        }
+      })();
+
+      // --------------------------------------------------------------------------
+      // 2. INDEXEDDB PERSISTENCE LAYER (WITH GRACEFUL IN-MEMORY FALLBACK)
+      // --------------------------------------------------------------------------
+      const DB_NAME = 'RoughSheetDB_v2';
+      const DB_VERSION = 1;
+      let dbInstance = null;
+      let dbAvailable = true;
+
+      function openDB() {
+        return new Promise((resolve) => {
+          if (!window.indexedDB) {
+            dbAvailable = false;
+            return resolve(null);
+          }
+          if (dbInstance) return resolve(dbInstance);
+          try {
+            const req = indexedDB.open(DB_NAME, DB_VERSION);
+            req.onupgradeneeded = (e) => {
+              const db = e.target.result;
+              if (!db.objectStoreNames.contains('sheets')) {
+                db.createObjectStore('sheets', { keyPath: 'id' });
+              }
+              if (!db.objectStoreNames.contains('media')) {
+                db.createObjectStore('media', { keyPath: 'id' });
+              }
+              if (!db.objectStoreNames.contains('meta')) {
+                db.createObjectStore('meta', { keyPath: 'key' });
+              }
+            };
+            req.onsuccess = (e) => {
+              dbInstance = e.target.result;
+              resolve(dbInstance);
+            };
+            req.onerror = () => {
+              dbAvailable = false;
+              resolve(null);
+            };
+          } catch (_) {
+            dbAvailable = false;
+            resolve(null);
+          }
+        });
+      }
+
+      async function dbPut(storeName, value) {
+        const db = await openDB();
+        if (!db) return;
+        return new Promise((resolve) => {
+          try {
+            const tx = db.transaction(storeName, 'readwrite');
+            tx.objectStore(storeName).put(value);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+          } catch (_) {
+            resolve();
+          }
+        });
+      }
+
+      async function dbDelete(storeName, key) {
+        const db = await openDB();
+        if (!db) return;
+        return new Promise((resolve) => {
+          try {
+            const tx = db.transaction(storeName, 'readwrite');
+            tx.objectStore(storeName).delete(key);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+          } catch (_) {
+            resolve();
+          }
+        });
+      }
+
+      async function dbGet(storeName, key) {
+        const db = await openDB();
+        if (!db) return null;
+        return new Promise((resolve) => {
+          try {
+            const tx = db.transaction(storeName, 'readonly');
+            const req = tx.objectStore(storeName).get(key);
+            req.onsuccess = () => resolve(req.result || null);
+            req.onerror = () => resolve(null);
+          } catch (_) {
+            resolve(null);
+          }
+        });
+      }
+
+      async function dbGetAll(storeName) {
+        const db = await openDB();
+        if (!db) return [];
+        return new Promise((resolve) => {
+          try {
+            const tx = db.transaction(storeName, 'readonly');
+            const req = tx.objectStore(storeName).getAll();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => resolve([]);
+          } catch (_) {
+            resolve([]);
+          }
+        });
+      }
+
+      // --------------------------------------------------------------------------
+      // 3. APPLICATION STATE & DUAL-CANVAS REFERENCES
+      // --------------------------------------------------------------------------
+      const staticCanvas = document.getElementById('staticCanvas');
+      const staticCtx = staticCanvas.getContext('2d', { alpha: false });
+      const canvas = document.getElementById('activeCanvas');
+      const ctx = canvas.getContext('2d', { alpha: true });
+
+      // In-memory cache of loaded HTMLImageElements & dataURLs by mediaId
+      const mediaCache = new Map();
+
+      const state = {
+        sheets: [],
+        activeSheetId: null,
+        tool: 'pen', // 'pen' | 'shape' | 'highlighter' | 'touch-eraser' | 'circle-eraser' | 'lasso' | 'pan' | 'screenshot'
+        color: 'auto',
+        size: 3,
+        // Undo/Redo stacks per sheet (lightweight JSON snapshots of items array)
+        history: new Map(),
+        // Selection state for Lasso / Tap-to-Select
+        selectedIds: new Set(),
+        selectionBBox: null,
+        // Screenshot crop rect in screen coordinates
+        cropRect: null,
+        isCropping: false,
+        // Active pointers Map<pointerId, {x, y}>
+        activePointers: new Map(),
+        firstPointerDownTime: 0,
+        isPinching: false,
+        pinchStartDist: 0,
+        pinchStartScale: 1,
+        pinchStartMidWorld: { x: 0, y: 0 },
+        // Drawing / Tool temporary states
+        isDrawing: false,
+        currentStroke: null,
+        rawStrokeBeforeSnap: null,
+        holdTimer: null,
+        holdAnchor: null,
+        snappedCurrent: false,
+        lassoPath: [],
+        eraserCursor: null,
+        touchErasedAny: false,
+        // Lasso drag/scale
+        lassoDragMode: null, // 'move' | 'scale' | 'draw'
+        lassoDragStartWorld: null,
+        lassoOrigItems: null,
+        lassoOrigBBox: null,
+        // Pan state
+        panStartScreen: null,
+        panStartCam: null,
+        spacePressed: false,
+        // Fullscreen auto-restore tracking
+        userWantedFullscreen: false,
+        // Dual-Canvas Dirty Flags
+        staticDirty: true,
+        activeDirty: true,
+        saveTimer: null
+      };
+
+      const uid = () => 'id_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+
+      function createNewSheetObj(name = 'Rough Sheet 1') {
+        return {
+          id: uid(),
+          name,
+          updatedAt: Date.now(),
+          camera: { x: 0, y: 0, scale: 1 },
+          settings: {
+            grid: 'grid',
+            theme: 'white',
+            lockMedia: true
+          },
+          items: []
+        };
+      }
+
+      function getActiveSheet() {
+        return state.sheets.find((s) => s.id === state.activeSheetId) || state.sheets[0];
+      }
+
+      // --------------------------------------------------------------------------
+      // 4. COORDINATE TRANSFORMS & GEOMETRY HELPERS
+      // --------------------------------------------------------------------------
+      function screenToWorld(sx, sy) {
+        const cam = getActiveSheet().camera;
+        return {
+          x: sx / cam.scale + cam.x,
+          y: sy / cam.scale + cam.y
+        };
+      }
+
+      function dist(a, b) {
+        return Math.hypot(a.x - b.x, a.y - b.y);
+      }
+
+      function distToSegment(p, v, w) {
+        const l2 = (w.x - v.x) ** 2 + (w.y - v.y) ** 2;
+        if (l2 === 0) return dist(p, v);
+        let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+        t = Math.max(0, Math.min(1, t));
+        return dist(p, { x: v.x + t * (w.x - v.x), y: v.y + t * (w.y - v.y) });
+      }
+
+      function computeItemBBox(item) {
+        if (item.type === 'image') {
+          return {
+            minX: item.x,
+            minY: item.y,
+            maxX: item.x + item.width,
+            maxY: item.y + item.height
+          };
+        }
+        if (item.type === 'stroke') {
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          for (const p of item.points) {
+            if (p.x < minX) minX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y > maxY) maxY = p.y;
+          }
+          const pad = (item.size || 3) * 0.6;
+          return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad };
+        }
+        if (item.type === 'shape') {
+          const pad = (item.size || 3) * 0.6;
+          if (item.shapeType === 'triangle' && item.points) {
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const p of item.points) {
+              if (p.x < minX) minX = p.x;
+              if (p.y < minY) minY = p.y;
+              if (p.x > maxX) maxX = p.x;
+              if (p.y > maxY) maxY = p.y;
+            }
+            return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad };
+          }
+          return {
+            minX: Math.min(item.x1, item.x2) - pad,
+            minY: Math.min(item.y1, item.y2) - pad,
+            maxX: Math.max(item.x1, item.x2) + pad,
+            maxY: Math.max(item.y1, item.y2) + pad
+          };
+        }
+        return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+      }
+
+      function bboxIntersects(a, b) {
+        return a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;
+      }
+
+      function pointInPolygon(pt, poly) {
+        let inside = false;
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+          const xi = poly[i].x, yi = poly[i].y;
+          const xj = poly[j].x, yj = poly[j].y;
+          const intersect =
+            yi > pt.y !== yj > pt.y &&
+            pt.x < ((xj - xi) * (pt.y - yi)) / (yj - yi + 1e-9) + xi;
+          if (intersect) inside = !inside;
+        }
+        return inside;
+      }
+
+      function segmentsIntersect(a, b, c, d) {
+        const ccw = (p1, p2, p3) => (p3.y - p1.y) * (p2.x - p1.x) > (p2.y - p1.y) * (p3.x - p1.x);
+        return ccw(a, c, d) !== ccw(b, c, d) && ccw(a, b, c) !== ccw(a, b, d);
+      }
+
+      function segmentIntersectsPolygon(a, b, poly) {
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+          if (segmentsIntersect(a, b, poly[j], poly[i])) return true;
+        }
+        return false;
+      }
+
+      function itemIntersectsPolygon(item, poly) {
+        if (poly.length < 3) return false;
+        const b = item.bbox || (item.bbox = computeItemBBox(item));
+        let pMinX = Infinity, pMinY = Infinity, pMaxX = -Infinity, pMaxY = -Infinity;
+        for (const p of poly) {
+          if (p.x < pMinX) pMinX = p.x;
+          if (p.y < pMinY) pMinY = p.y;
+          if (p.x > pMaxX) pMaxX = p.x;
+          if (p.y > pMaxY) pMaxY = p.y;
+        }
+        if (!bboxIntersects(b, { minX: pMinX, minY: pMinY, maxX: pMaxX, maxY: pMaxY })) return false;
+
+        if (item.type === 'stroke') {
+          const pts = item.points;
+          if (pts.length === 1) return pointInPolygon(pts[0], poly);
+          for (let i = 0; i < pts.length; i++) {
+            if (pointInPolygon(pts[i], poly)) return true;
+            if (i > 0 && segmentIntersectsPolygon(pts[i - 1], pts[i], poly)) return true;
+          }
+          return false;
+        }
+        if (item.type === 'shape') {
+          const cx = (b.minX + b.maxX) / 2;
+          const cy = (b.minY + b.maxY) / 2;
+          if (pointInPolygon({ x: cx, y: cy }, poly)) return true;
+
+          if (item.shapeType === 'line' || item.shapeType === 'arrow') {
+            const p1 = { x: item.x1, y: item.y1 };
+            const p2 = { x: item.x2, y: item.y2 };
+            return pointInPolygon(p1, poly) || pointInPolygon(p2, poly) || segmentIntersectsPolygon(p1, p2, poly);
+          }
+          if (item.shapeType === 'rect') {
+            const x1 = Math.min(item.x1, item.x2), x2 = Math.max(item.x1, item.x2);
+            const y1 = Math.min(item.y1, item.y2), y2 = Math.max(item.y1, item.y2);
+            const corners = [{ x: x1, y: y1 }, { x: x2, y: y1 }, { x: x2, y: y2 }, { x: x1, y: y2 }];
+            if (corners.some((c) => pointInPolygon(c, poly))) return true;
+            for (let i = 0; i < 4; i++) {
+              if (segmentIntersectsPolygon(corners[i], corners[(i + 1) % 4], poly)) return true;
+            }
+            return false;
+          }
+          if (item.shapeType === 'triangle' && item.points && item.points.length === 3) {
+            const [p0, p1, p2] = item.points;
+            if (item.points.some((p) => pointInPolygon(p, poly))) return true;
+            return (
+              segmentIntersectsPolygon(p0, p1, poly) ||
+              segmentIntersectsPolygon(p1, p2, poly) ||
+              segmentIntersectsPolygon(p2, p0, poly)
+            );
+          }
+          if (item.shapeType === 'ellipse') {
+            const rx = Math.max(1, Math.abs(item.x2 - item.x1) / 2);
+            const ry = Math.max(1, Math.abs(item.y2 - item.y1) / 2);
+            const steps = 16;
+            let prev = { x: cx + rx, y: cy };
+            for (let i = 1; i <= steps; i++) {
+              const ang = (i / steps) * Math.PI * 2;
+              const cur = { x: cx + Math.cos(ang) * rx, y: cy + Math.sin(ang) * ry };
+              if (pointInPolygon(cur, poly) || segmentIntersectsPolygon(prev, cur, poly)) return true;
+              prev = cur;
+            }
+            return false;
+          }
+        }
+        if (item.type === 'image') {
+          const cx = item.x + item.width / 2;
+          const cy = item.y + item.height / 2;
+          return pointInPolygon({ x: cx, y: cy }, poly);
+        }
+        return false;
+      }
+
+      function hitTestItem(item, pt, radius) {
+        const b = item.bbox || (item.bbox = computeItemBBox(item));
+        if (
+          pt.x < b.minX - radius ||
+          pt.x > b.maxX + radius ||
+          pt.y < b.minY - radius ||
+          pt.y > b.maxY + radius
+        ) {
+          return false;
+        }
+        if (item.type === 'image') {
+          return pt.x >= item.x && pt.x <= item.x + item.width && pt.y >= item.y && pt.y <= item.y + item.height;
+        }
+        const tol = radius + (item.size || 3) * 0.5;
+        if (item.type === 'stroke') {
+          const pts = item.points;
+          if (pts.length === 1) return dist(pt, pts[0]) <= tol;
+          for (let i = 1; i < pts.length; i++) {
+            if (distToSegment(pt, pts[i - 1], pts[i]) <= tol) return true;
+          }
+          return false;
+        }
+        if (item.type === 'shape') {
+          if (item.shapeType === 'line' || item.shapeType === 'arrow') {
+            return distToSegment(pt, { x: item.x1, y: item.y1 }, { x: item.x2, y: item.y2 }) <= tol;
+          }
+          if (item.shapeType === 'rect') {
+            const x1 = Math.min(item.x1, item.x2), x2 = Math.max(item.x1, item.x2);
+            const y1 = Math.min(item.y1, item.y2), y2 = Math.max(item.y1, item.y2);
+            const edges = [
+              [{ x: x1, y: y1 }, { x: x2, y: y1 }],
+              [{ x: x2, y: y1 }, { x: x2, y: y2 }],
+              [{ x: x2, y: y2 }, { x: x1, y: y2 }],
+              [{ x: x1, y: y2 }, { x: x1, y: y1 }]
+            ];
+            return edges.some(([a, b2]) => distToSegment(pt, a, b2) <= tol);
+          }
+          if (item.shapeType === 'ellipse') {
+            const cx = (item.x1 + item.x2) / 2;
+            const cy = (item.y1 + item.y2) / 2;
+            const rx = Math.max(1, Math.abs(item.x2 - item.x1) / 2);
+            const ry = Math.max(1, Math.abs(item.y2 - item.y1) / 2);
+            const norm = Math.hypot((pt.x - cx) / rx, (pt.y - cy) / ry);
+            const avgR = (rx + ry) / 2;
+            return Math.abs(norm - 1) * avgR <= tol;
+          }
+          if (item.shapeType === 'triangle' && item.points && item.points.length === 3) {
+            const [p0, p1, p2] = item.points;
+            return (
+              distToSegment(pt, p0, p1) <= tol ||
+              distToSegment(pt, p1, p2) <= tol ||
+              distToSegment(pt, p2, p0) <= tol
+            );
+          }
+        }
+        return false;
+      }
+
+      // --------------------------------------------------------------------------
+      // 5. SMART SHAPE RECOGNITION (LINES, ARROWS, CIRCLES, RECTANGLES, TRIANGLES)
+      // --------------------------------------------------------------------------
+      function rdpSimplify(points, epsilon) {
+        if (points.length <= 2) return points;
+        let maxDist = 0;
+        let idx = 0;
+        const first = points[0];
+        const last = points[points.length - 1];
+        for (let i = 1; i < points.length - 1; i++) {
+          const d = distToSegment(points[i], first, last);
+          if (d > maxDist) {
+            maxDist = d;
+            idx = i;
+          }
+        }
+        if (maxDist > epsilon) {
+          const left = rdpSimplify(points.slice(0, idx + 1), epsilon);
+          const right = rdpSimplify(points.slice(idx), epsilon);
+          return left.slice(0, -1).concat(right);
+        }
+        return [first, last];
+      }
+
+      function recognizeShapeFromStroke(stroke) {
+        const pts = stroke.points;
+        if (!pts || pts.length < 6) return null;
+
+        let totalLen = 0;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (let i = 0; i < pts.length; i++) {
+          const p = pts[i];
+          if (p.x < minX) minX = p.x;
+          if (p.y < minY) minY = p.y;
+          if (p.x > maxX) maxX = p.x;
+          if (p.y > maxY) maxY = p.y;
+          if (i > 0) totalLen += dist(pts[i - 1], p);
+        }
+        const w = maxX - minX;
+        const h = maxY - minY;
+        const diag = Math.hypot(w, h);
+        if (diag < 18 || totalLen < 20) return null;
+
+        const start = pts[0];
+        const end = pts[pts.length - 1];
+        const endDist = dist(start, end);
+
+        // 1. Straight Line
+        if (endDist > 20 && totalLen / endDist < 1.18) {
+          let x1 = start.x, y1 = start.y, x2 = end.x, y2 = end.y;
+          const angle = Math.abs(Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI));
+          if (angle < 6 || angle > 174) y2 = y1;
+          else if (Math.abs(angle - 90) < 6) x2 = x1;
+
+          const shape = {
+            id: uid(),
+            type: 'shape',
+            shapeType: 'line',
+            color: stroke.color,
+            size: stroke.size,
+            x1, y1, x2, y2
+          };
+          shape.bbox = computeItemBBox(shape);
+          return shape;
+        }
+
+        // 2. Single-stroke Arrow
+        if (endDist > diag * 0.55 && totalLen / endDist < 1.55) {
+          let tipIdx = 0, maxD = 0;
+          for (let i = 0; i < pts.length; i++) {
+            const d = dist(start, pts[i]);
+            if (d > maxD) { maxD = d; tipIdx = i; }
+          }
+          if (tipIdx > pts.length * 0.55 && tipIdx < pts.length - 2) {
+            const shaftLen = dist(start, pts[tipIdx]);
+            let shaftPath = 0;
+            for (let i = 1; i <= tipIdx; i++) shaftPath += dist(pts[i - 1], pts[i]);
+            if (shaftPath / Math.max(shaftLen, 1) < 1.18) {
+              const shape = {
+                id: uid(),
+                type: 'shape',
+                shapeType: 'arrow',
+                color: stroke.color,
+                size: stroke.size,
+                x1: start.x,
+                y1: start.y,
+                x2: pts[tipIdx].x,
+                y2: pts[tipIdx].y
+              };
+              shape.bbox = computeItemBBox(shape);
+              return shape;
+            }
+          }
+        }
+
+        // 3. Closed Shapes (Circle / Ellipse / Rectangle / Triangle)
+        if (endDist < diag * 0.48 && w > 14 && h > 14) {
+          const cx = (minX + maxX) / 2;
+          const cy = (minY + maxY) / 2;
+          const rx = w / 2;
+          const ry = h / 2;
+
+          let radialSum = 0;
+          const radii = [];
+          for (const p of pts) {
+            const r = Math.hypot((p.x - cx) / rx, (p.y - cy) / ry);
+            radii.push(r);
+            radialSum += r;
+          }
+          const meanR = radialSum / radii.length;
+          let variance = 0;
+          for (const r of radii) variance += (r - meanR) ** 2;
+          const stdDev = Math.sqrt(variance / radii.length);
+
+          if (stdDev < 0.165) {
+            let x1 = minX, y1 = minY, x2 = maxX, y2 = maxY;
+            if (Math.abs(w - h) / Math.max(w, h) < 0.2) {
+              const r = (w + h) / 4;
+              x1 = cx - r; y1 = cy - r; x2 = cx + r; y2 = cy + r;
+            }
+            const shape = {
+              id: uid(),
+              type: 'shape',
+              shapeType: 'ellipse',
+              color: stroke.color,
+              size: stroke.size,
+              x1, y1, x2, y2
+            };
+            shape.bbox = computeItemBBox(shape);
+            return shape;
+          }
+
+          const simplified = rdpSimplify(pts, diag * 0.085);
+          const verts = simplified.slice();
+          if (verts.length > 2 && dist(verts[0], verts[verts.length - 1]) < diag * 0.22) {
+            verts.pop();
+          }
+
+          if (verts.length === 3) {
+            const shape = {
+              id: uid(),
+              type: 'shape',
+              shapeType: 'triangle',
+              color: stroke.color,
+              size: stroke.size,
+              points: verts.map((v) => ({ x: v.x, y: v.y }))
+            };
+            shape.bbox = computeItemBBox(shape);
+            return shape;
+          }
+
+          let area = 0;
+          for (let i = 0; i < pts.length; i++) {
+            const p1 = pts[i];
+            const p2 = pts[(i + 1) % pts.length];
+            area += p1.x * p2.y - p2.x * p1.y;
+          }
+          const fillRatio = Math.abs(area) / 2 / Math.max(1, w * h);
+
+          if (verts.length === 4 || fillRatio > 0.72) {
+            const shape = {
+              id: uid(),
+              type: 'shape',
+              shapeType: 'rect',
+              color: stroke.color,
+              size: stroke.size,
+              x1: minX,
+              y1: minY,
+              x2: maxX,
+              y2: maxY
+            };
+            shape.bbox = computeItemBBox(shape);
+            return shape;
+          }
+
+          if (fillRatio < 0.62) {
+            let pA = pts[0], pB = pts[0], pC = pts[0];
+            let maxAB = 0;
+            for (const p of pts) {
+              const d = dist(pA, p);
+              if (d > maxAB) { maxAB = d; pB = p; }
+            }
+            let maxArea = 0;
+            for (const p of pts) {
+              const a = Math.abs((pB.x - pA.x) * (p.y - pA.y) - (p.x - pA.x) * (pB.y - pA.y));
+              if (a > maxArea) { maxArea = a; pC = p; }
+            }
+            const shape = {
+              id: uid(),
+              type: 'shape',
+              shapeType: 'triangle',
+              color: stroke.color,
+              size: stroke.size,
+              points: [{ x: pA.x, y: pA.y }, { x: pB.x, y: pB.y }, { x: pC.x, y: pC.y }]
+            };
+            shape.bbox = computeItemBBox(shape);
+            return shape;
+          }
+
+          const shape = {
+            id: uid(),
+            type: 'shape',
+            shapeType: 'ellipse',
+            color: stroke.color,
+            size: stroke.size,
+            x1: minX,
+            y1: minY,
+            x2: maxX,
+            y2: maxY
+          };
+          shape.bbox = computeItemBBox(shape);
+          return shape;
+        }
+
+        return null;
+      }
+
+      // --------------------------------------------------------------------------
+      // 6. STEP-BY-STEP UNDO / REDO HISTORY ENGINE
+      // --------------------------------------------------------------------------
+      const MAX_HISTORY = 80;
+
+      function getSheetHistory(sheetId) {
+        if (!state.history.has(sheetId)) {
+          state.history.set(sheetId, { undo: [], redo: [] });
+        }
+        return state.history.get(sheetId);
+      }
+
+      function initHistoryForSheet(sheet) {
+        const h = getSheetHistory(sheet.id);
+        if (h.undo.length === 0) {
+          h.undo.push(JSON.stringify(sheet.items));
+        }
+        updateUndoRedoButtons();
+      }
+
+      function commitHistory() {
+        const sheet = getActiveSheet();
+        const h = getSheetHistory(sheet.id);
+        const snap = JSON.stringify(sheet.items);
+        if (h.undo.length > 0 && h.undo[h.undo.length - 1] === snap) return;
+        h.undo.push(snap);
+        if (h.undo.length > MAX_HISTORY) h.undo.shift();
+        h.redo = [];
+        sheet.updatedAt = Date.now();
+        updateUndoRedoButtons();
+        scheduleAutoSave();
+      }
+
+      function undo() {
+        const sheet = getActiveSheet();
+        const h = getSheetHistory(sheet.id);
+        if (h.undo.length <= 1) return;
+        const current = h.undo.pop();
+        h.redo.push(current);
+        sheet.items = JSON.parse(h.undo[h.undo.length - 1]);
+        clearSelection();
+        updateUndoRedoButtons();
+        scheduleAutoSave();
+        requestRender();
+      }
+
+      function redo() {
+        const sheet = getActiveSheet();
+        const h = getSheetHistory(sheet.id);
+        if (h.redo.length === 0) return;
+        const next = h.redo.pop();
+        h.undo.push(next);
+        sheet.items = JSON.parse(next);
+        clearSelection();
+        updateUndoRedoButtons();
+        scheduleAutoSave();
+        requestRender();
+      }
+
+      function updateUndoRedoButtons() {
+        const sheet = getActiveSheet();
+        if (!sheet) return;
+        const h = getSheetHistory(sheet.id);
+        document.getElementById('quickUndoBtn').disabled = h.undo.length <= 1;
+        document.getElementById('quickRedoBtn').disabled = h.redo.length === 0;
+      }
+
+      // --------------------------------------------------------------------------
+      // 7. DUAL-CANVAS RENDERING PIPELINE (STATIC LAYER + ACTIVE OVERLAY)
+      // --------------------------------------------------------------------------
+      function resolveInkColor(color, theme) {
+        if (color === 'auto') {
+          return theme === 'dark' ? '#f8fafc' : '#0f172a';
+        }
+        return color;
+      }
+
+      function getPaperColors(theme) {
+        if (theme === 'dark') {
+          return { bg: '#0f172a', grid: 'rgba(148, 163, 184, 0.14)', majorGrid: 'rgba(148, 163, 184, 0.24)' };
+        }
+        if (theme === 'cream') {
+          return { bg: '#fbf7ee', grid: 'rgba(120, 113, 108, 0.14)', majorGrid: 'rgba(120, 113, 108, 0.24)' };
+        }
+        return { bg: '#ffffff', grid: 'rgba(148, 163, 184, 0.20)', majorGrid: 'rgba(148, 163, 184, 0.34)' };
+      }
+
+      function drawBackgroundGrid(targetCtx, width, height, cam, settings) {
+        const colors = getPaperColors(settings.theme);
+        targetCtx.fillStyle = colors.bg;
+        targetCtx.fillRect(0, 0, width, height);
+
+        if (settings.grid === 'blank') return;
+
+        let step = 32;
+        while (step * cam.scale < 18) step *= 2;
+        while (step * cam.scale > 96) step /= 2;
+
+        const worldLeft = cam.x;
+        const worldTop = cam.y;
+        const worldRight = cam.x + width / cam.scale;
+        const worldBottom = cam.y + height / cam.scale;
+
+        const startX = Math.floor(worldLeft / step) * step;
+        const startY = Math.floor(worldTop / step) * step;
+
+        targetCtx.save();
+        if (settings.grid === 'grid') {
+          targetCtx.lineWidth = 1;
+          targetCtx.strokeStyle = colors.grid;
+          targetCtx.beginPath();
+          for (let x = startX; x <= worldRight; x += step) {
+            const sx = Math.round((x - cam.x) * cam.scale) + 0.5;
+            targetCtx.moveTo(sx, 0);
+            targetCtx.lineTo(sx, height);
+          }
+          for (let y = startY; y <= worldBottom; y += step) {
+            const sy = Math.round((y - cam.y) * cam.scale) + 0.5;
+            targetCtx.moveTo(0, sy);
+            targetCtx.lineTo(width, sy);
+          }
+          targetCtx.stroke();
+        } else if (settings.grid === 'ruled') {
+          targetCtx.lineWidth = 1;
+          targetCtx.strokeStyle = colors.grid;
+          targetCtx.beginPath();
+          for (let y = startY; y <= worldBottom; y += step) {
+            const sy = Math.round((y - cam.y) * cam.scale) + 0.5;
+            targetCtx.moveTo(0, sy);
+            targetCtx.lineTo(width, sy);
+          }
+          targetCtx.stroke();
+        } else if (settings.grid === 'dots') {
+          targetCtx.fillStyle = colors.majorGrid;
+          const r = Math.max(1, Math.min(2, cam.scale * 1.1));
+          for (let x = startX; x <= worldRight; x += step) {
+            const sx = (x - cam.x) * cam.scale;
+            for (let y = startY; y <= worldBottom; y += step) {
+              const sy = (y - cam.y) * cam.scale;
+              targetCtx.fillRect(sx - r * 0.5, sy - r * 0.5, r, r);
+            }
+          }
+        }
+        targetCtx.restore();
+      }
+
+      function drawImageItem(targetCtx, item, theme) {
+        const cached = mediaCache.get(item.mediaId);
+        targetCtx.save();
+        if (cached && cached.img && cached.img.complete) {
+          targetCtx.shadowColor = theme === 'dark' ? 'rgba(0,0,0,0.45)' : 'rgba(15,23,42,0.12)';
+          targetCtx.shadowBlur = 14;
+          targetCtx.shadowOffsetY = 4;
+          targetCtx.drawImage(cached.img, item.x, item.y, item.width, item.height);
+          targetCtx.shadowColor = 'transparent';
+          targetCtx.strokeStyle = theme === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(15,23,42,0.10)';
+          targetCtx.lineWidth = 1;
+          targetCtx.strokeRect(item.x, item.y, item.width, item.height);
+        } else {
+          targetCtx.fillStyle = theme === 'dark' ? '#1e293b' : '#f1f5f9';
+          targetCtx.fillRect(item.x, item.y, item.width, item.height);
+          targetCtx.strokeStyle = '#94a3b8';
+          targetCtx.strokeRect(item.x, item.y, item.width, item.height);
+        }
+        targetCtx.restore();
+      }
+
+      function drawSmoothStroke(targetCtx, item, theme) {
+        const pts = item.points;
+        if (!pts || pts.length === 0) return;
+
+        targetCtx.save();
+        targetCtx.lineCap = 'round';
+        targetCtx.lineJoin = 'round';
+        targetCtx.lineWidth = item.size;
+        targetCtx.strokeStyle = resolveInkColor(item.color, theme);
+        if (item.tool === 'highlighter') {
+          targetCtx.globalAlpha = 0.34;
+        }
+
+        targetCtx.beginPath();
+        if (pts.length === 1) {
+          targetCtx.fillStyle = targetCtx.strokeStyle;
+          targetCtx.arc(pts[0].x, pts[0].y, item.size / 2, 0, Math.PI * 2);
+          targetCtx.fill();
+        } else if (pts.length === 2) {
+          targetCtx.moveTo(pts[0].x, pts[0].y);
+          targetCtx.lineTo(pts[1].x, pts[1].y);
+          targetCtx.stroke();
+        } else {
+          targetCtx.moveTo(pts[0].x, pts[0].y);
+          for (let i = 1; i < pts.length - 1; i++) {
+            const midX = (pts[i].x + pts[i + 1].x) / 2;
+            const midY = (pts[i].y + pts[i + 1].y) / 2;
+            targetCtx.quadraticCurveTo(pts[i].x, pts[i].y, midX, midY);
+          }
+          const last = pts[pts.length - 1];
+          targetCtx.lineTo(last.x, last.y);
+          targetCtx.stroke();
+        }
+        targetCtx.restore();
+      }
+
+      function drawShapeItem(targetCtx, item, theme) {
+        targetCtx.save();
+        targetCtx.lineCap = 'round';
+        targetCtx.lineJoin = 'round';
+        targetCtx.lineWidth = item.size;
+        targetCtx.strokeStyle = resolveInkColor(item.color, theme);
+
+        targetCtx.beginPath();
+        if (item.shapeType === 'line' || item.shapeType === 'arrow') {
+          targetCtx.moveTo(item.x1, item.y1);
+          targetCtx.lineTo(item.x2, item.y2);
+          targetCtx.stroke();
+
+          if (item.shapeType === 'arrow') {
+            const angle = Math.atan2(item.y2 - item.y1, item.x2 - item.x1);
+            const headLen = Math.max(12, item.size * 4.2);
+            targetCtx.beginPath();
+            targetCtx.moveTo(item.x2, item.y2);
+            targetCtx.lineTo(
+              item.x2 - headLen * Math.cos(angle - Math.PI / 6),
+              item.y2 - headLen * Math.sin(angle - Math.PI / 6)
+            );
+            targetCtx.moveTo(item.x2, item.y2);
+            targetCtx.lineTo(
+              item.x2 - headLen * Math.cos(angle + Math.PI / 6),
+              item.y2 - headLen * Math.sin(angle + Math.PI / 6)
+            );
+            targetCtx.stroke();
+          }
+        } else if (item.shapeType === 'rect') {
+          const x = Math.min(item.x1, item.x2);
+          const y = Math.min(item.y1, item.y2);
+          const w = Math.abs(item.x2 - item.x1);
+          const h = Math.abs(item.y2 - item.y1);
+          targetCtx.strokeRect(x, y, w, h);
+        } else if (item.shapeType === 'ellipse') {
+          const cx = (item.x1 + item.x2) / 2;
+          const cy = (item.y1 + item.y2) / 2;
+          const rx = Math.max(1, Math.abs(item.x2 - item.x1) / 2);
+          const ry = Math.max(1, Math.abs(item.y2 - item.y1) / 2);
+          targetCtx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+          targetCtx.stroke();
+        } else if (item.shapeType === 'triangle' && item.points && item.points.length === 3) {
+          targetCtx.moveTo(item.points[0].x, item.points[0].y);
+          targetCtx.lineTo(item.points[1].x, item.points[1].y);
+          targetCtx.lineTo(item.points[2].x, item.points[2].y);
+          targetCtx.closePath();
+          targetCtx.stroke();
+        }
+        targetCtx.restore();
+      }
+
+      function renderStaticScene(targetCtx, width, height, sheet) {
+        const cam = sheet.camera;
+        const theme = sheet.settings.theme;
+
+        drawBackgroundGrid(targetCtx, width, height, cam, sheet.settings);
+
+        const viewBBox = {
+          minX: cam.x - 40 / cam.scale,
+          minY: cam.y - 40 / cam.scale,
+          maxX: cam.x + (width + 40) / cam.scale,
+          maxY: cam.y + (height + 40) / cam.scale
+        };
+
+        targetCtx.save();
+        targetCtx.scale(cam.scale, cam.scale);
+        targetCtx.translate(-cam.x, -cam.y);
+
+        // Pass 1: Background Media (Images & PDF pages)
+        for (const item of sheet.items) {
+          if (item.type !== 'image') continue;
+          const b = item.bbox || (item.bbox = computeItemBBox(item));
+          if (!bboxIntersects(b, viewBBox)) continue;
+          drawImageItem(targetCtx, item, theme);
+        }
+
+        // Pass 2: Highlighters (rendered behind ink)
+        for (const item of sheet.items) {
+          if (item.type !== 'stroke' || item.tool !== 'highlighter') continue;
+          const b = item.bbox || (item.bbox = computeItemBBox(item));
+          if (!bboxIntersects(b, viewBBox)) continue;
+          drawSmoothStroke(targetCtx, item, theme);
+        }
+
+        // Pass 3: Pen strokes & Geometric Shapes
+        for (const item of sheet.items) {
+          if (item.type === 'image') continue;
+          if (item.type === 'stroke' && item.tool === 'highlighter') continue;
+          const b = item.bbox || (item.bbox = computeItemBBox(item));
+          if (!bboxIntersects(b, viewBBox)) continue;
+          if (item.type === 'stroke') drawSmoothStroke(targetCtx, item, theme);
+          else if (item.type === 'shape') drawShapeItem(targetCtx, item, theme);
+        }
+
+        targetCtx.restore();
+      }
+
+      function renderActiveOverlay(targetCtx, width, height, sheet) {
+        targetCtx.clearRect(0, 0, width, height);
+
+        const cam = sheet.camera;
+        const theme = sheet.settings.theme;
+
+        targetCtx.save();
+        targetCtx.scale(cam.scale, cam.scale);
+        targetCtx.translate(-cam.x, -cam.y);
+
+        // Active in-progress stroke or snapped shape
+        if (state.currentStroke) {
+          if (state.currentStroke.type === 'shape') {
+            drawShapeItem(targetCtx, state.currentStroke, theme);
+          } else {
+            drawSmoothStroke(targetCtx, state.currentStroke, theme);
+          }
+        }
+
+        // Lasso / Circle-Eraser Path
+        if (state.lassoPath.length > 1) {
+          const isErase = state.tool === 'circle-eraser';
+          targetCtx.save();
+          targetCtx.beginPath();
+          targetCtx.moveTo(state.lassoPath[0].x, state.lassoPath[0].y);
+          for (let i = 1; i < state.lassoPath.length; i++) {
+            targetCtx.lineTo(state.lassoPath[i].x, state.lassoPath[i].y);
+          }
+          targetCtx.closePath();
+          targetCtx.fillStyle = isErase ? 'rgba(239, 68, 68, 0.12)' : 'rgba(37, 99, 235, 0.10)';
+          targetCtx.fill();
+          targetCtx.strokeStyle = isErase ? '#ef4444' : '#2563eb';
+          targetCtx.lineWidth = 1.8 / cam.scale;
+          targetCtx.setLineDash([6 / cam.scale, 4 / cam.scale]);
+          targetCtx.stroke();
+          targetCtx.restore();
+        }
+
+        // Selection Bounding Box & Resize Handle
+        if (state.selectedIds.size > 0 && state.selectionBBox) {
+          const b = state.selectionBBox;
+          const pad = 8 / cam.scale;
+          const x = b.minX - pad;
+          const y = b.minY - pad;
+          const w = b.maxX - b.minX + pad * 2;
+          const h = b.maxY - b.minY + pad * 2;
+
+          targetCtx.save();
+          targetCtx.fillStyle = 'rgba(37, 99, 235, 0.06)';
+          targetCtx.fillRect(x, y, w, h);
+          targetCtx.strokeStyle = '#2563eb';
+          targetCtx.lineWidth = 1.6 / cam.scale;
+          targetCtx.setLineDash([6 / cam.scale, 4 / cam.scale]);
+          targetCtx.strokeRect(x, y, w, h);
+          targetCtx.setLineDash([]);
+
+          // Bottom-right resize handle
+          const handleR = 8 / cam.scale;
+          targetCtx.beginPath();
+          targetCtx.arc(x + w, y + h, handleR, 0, Math.PI * 2);
+          targetCtx.fillStyle = '#ffffff';
+          targetCtx.fill();
+          targetCtx.lineWidth = 2.2 / cam.scale;
+          targetCtx.strokeStyle = '#2563eb';
+          targetCtx.stroke();
+          targetCtx.restore();
+        }
+
+        targetCtx.restore();
+
+        // Screen-space Overlays (Touch Eraser Cursor & Screenshot Crop Box)
+        if (state.tool === 'touch-eraser' && state.eraserCursor) {
+          targetCtx.save();
+          targetCtx.beginPath();
+          targetCtx.arc(state.eraserCursor.x, state.eraserCursor.y, 16, 0, Math.PI * 2);
+          targetCtx.fillStyle = 'rgba(239, 68, 68, 0.14)';
+          targetCtx.fill();
+          targetCtx.strokeStyle = '#ef4444';
+          targetCtx.lineWidth = 1.8;
+          targetCtx.stroke();
+          targetCtx.restore();
+        }
+
+        if (state.tool === 'screenshot') {
+          targetCtx.save();
+          targetCtx.fillStyle = 'rgba(15, 23, 42, 0.42)';
+          if (state.cropRect) {
+            const rx = Math.min(state.cropRect.x1, state.cropRect.x2);
+            const ry = Math.min(state.cropRect.y1, state.cropRect.y2);
+            const rw = Math.abs(state.cropRect.x2 - state.cropRect.x1);
+            const rh = Math.abs(state.cropRect.y2 - state.cropRect.y1);
+            targetCtx.beginPath();
+            targetCtx.rect(0, 0, width, height);
+            targetCtx.rect(rx, ry, rw, rh);
+            targetCtx.fill('evenodd');
+
+            targetCtx.strokeStyle = '#10b981';
+            targetCtx.lineWidth = 2;
+            targetCtx.setLineDash([6, 4]);
+            targetCtx.strokeRect(rx, ry, rw, rh);
+          } else {
+            targetCtx.fillRect(0, 0, width, height);
+          }
+          targetCtx.restore();
+        }
+      }
+
+      function requestActiveRender() {
+        state.activeDirty = true;
+      }
+
+      function requestRender() {
+        state.staticDirty = true;
+        state.activeDirty = true;
+      }
+
+      function renderLoop() {
+        if (state.sheets.length > 0 && (state.staticDirty || state.activeDirty)) {
+          const dpr = window.devicePixelRatio || 1;
+          const width = canvas.clientWidth;
+          const height = canvas.clientHeight;
+          const targetW = Math.round(width * dpr);
+          const targetH = Math.round(height * dpr);
+
+          if (targetW > 0 && targetH > 0) {
+            if (staticCanvas.width !== targetW || staticCanvas.height !== targetH) {
+              staticCanvas.width = targetW;
+              staticCanvas.height = targetH;
+              state.staticDirty = true;
+            }
+            if (canvas.width !== targetW || canvas.height !== targetH) {
+              canvas.width = targetW;
+              canvas.height = targetH;
+              state.activeDirty = true;
+            }
+
+            const sheet = getActiveSheet();
+            if (state.staticDirty) {
+              state.staticDirty = false;
+              staticCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+              renderStaticScene(staticCtx, width, height, sheet);
+            }
+            if (state.activeDirty) {
+              state.activeDirty = false;
+              ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+              renderActiveOverlay(ctx, width, height, sheet);
+            }
+          }
+        }
+        requestAnimationFrame(renderLoop);
+      }
+
+      // --------------------------------------------------------------------------
+      // 8. SELECTION HELPERS (LASSO MOVE / SCALE / DUPLICATE / DELETE)
+      // --------------------------------------------------------------------------
+      function recomputeSelectionBBox() {
+        const sheet = getActiveSheet();
+        if (state.selectedIds.size === 0) {
+          state.selectionBBox = null;
+          document.getElementById('selectionBar').classList.add('hidden');
+          return;
+        }
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const item of sheet.items) {
+          if (!state.selectedIds.has(item.id)) continue;
+          const b = item.bbox || (item.bbox = computeItemBBox(item));
+          if (b.minX < minX) minX = b.minX;
+          if (b.minY < minY) minY = b.minY;
+          if (b.maxX > maxX) maxX = b.maxX;
+          if (b.maxY > maxY) maxY = b.maxY;
+        }
+        if (minX === Infinity) {
+          clearSelection();
+          return;
+        }
+        state.selectionBBox = { minX, minY, maxX, maxY };
+        document.getElementById('selectionCountLabel').textContent = `${state.selectedIds.size} selected`;
+        document.getElementById('selectionBar').classList.remove('hidden');
+      }
+
+      function clearSelection() {
+        state.selectedIds.clear();
+        state.selectionBBox = null;
+        document.getElementById('selectionBar').classList.add('hidden');
+        requestActiveRender();
+      }
+
+      function translateItem(item, dx, dy) {
+        if (item.type === 'stroke') {
+          for (const p of item.points) { p.x += dx; p.y += dy; }
+        } else if (item.type === 'shape') {
+          if (item.points) {
+            for (const p of item.points) { p.x += dx; p.y += dy; }
+          } else {
+            item.x1 += dx; item.y1 += dy; item.x2 += dx; item.y2 += dy;
+          }
+        } else if (item.type === 'image') {
+          item.x += dx; item.y += dy;
+        }
+        item.bbox = computeItemBBox(item);
+      }
+
+      function scaleItemFromOrigin(origItem, targetItem, ox, oy, factor) {
+        const f = Math.max(0.15, Math.min(8, factor));
+        if (origItem.type === 'stroke') {
+          targetItem.points = origItem.points.map((p) => ({
+            x: ox + (p.x - ox) * f,
+            y: oy + (p.y - oy) * f
+          }));
+          targetItem.size = Math.max(0.8, origItem.size * f);
+        } else if (origItem.type === 'shape') {
+          if (origItem.points) {
+            targetItem.points = origItem.points.map((p) => ({
+              x: ox + (p.x - ox) * f,
+              y: oy + (p.y - oy) * f
+            }));
+          } else {
+            targetItem.x1 = ox + (origItem.x1 - ox) * f;
+            targetItem.y1 = oy + (origItem.y1 - oy) * f;
+            targetItem.x2 = ox + (origItem.x2 - ox) * f;
+            targetItem.y2 = oy + (origItem.y2 - oy) * f;
+          }
+          targetItem.size = Math.max(0.8, origItem.size * f);
+        } else if (origItem.type === 'image') {
+          targetItem.x = ox + (origItem.x - ox) * f;
+          targetItem.y = oy + (origItem.y - oy) * f;
+          targetItem.width = origItem.width * f;
+          targetItem.height = origItem.height * f;
+        }
+        targetItem.bbox = computeItemBBox(targetItem);
+      }
+
+      // --------------------------------------------------------------------------
+      // 9. ZERO-DROP POINTER & MULTI-TOUCH INPUT HANDLING
+      // --------------------------------------------------------------------------
+      function clearHoldTimer() {
+        if (state.holdTimer) {
+          clearTimeout(state.holdTimer);
+          state.holdTimer = null;
+        }
+      }
+
+      function startHoldShapeTimer() {
+        clearHoldTimer();
+        if (state.tool !== 'pen' || state.snappedCurrent) return;
+        state.holdTimer = setTimeout(() => {
+          if (!state.isDrawing || !state.currentStroke || state.currentStroke.type !== 'stroke') return;
+          const shape = recognizeShapeFromStroke(state.currentStroke);
+          if (shape) {
+            state.rawStrokeBeforeSnap = state.currentStroke;
+            state.currentStroke = shape;
+            state.snappedCurrent = true;
+            showToast(`Snapped to ${shape.shapeType} (Undo reverts snap)`);
+            requestActiveRender();
+          }
+        }, 550);
+      }
+
+      function eraseAtWorldPoint(worldPt) {
+        const sheet = getActiveSheet();
+        const radius = 16 / sheet.camera.scale;
+        let removed = false;
+        for (let i = sheet.items.length - 1; i >= 0; i--) {
+          const item = sheet.items[i];
+          if (item.type === 'image' && sheet.settings.lockMedia) continue;
+          if (hitTestItem(item, worldPt, radius)) {
+            sheet.items.splice(i, 1);
+            removed = true;
+          }
+        }
+        if (removed) {
+          state.touchErasedAny = true;
+          requestRender();
+        }
+      }
+
+      canvas.addEventListener('pointerdown', (e) => {
+        if (e.button === 2) return;
+        try {
+          canvas.setPointerCapture(e.pointerId);
+        } catch (_) {}
+
+        const rect = canvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+
+        if (state.activePointers.size === 0) {
+          state.firstPointerDownTime = performance.now();
+        }
+        state.activePointers.set(e.pointerId, { x: sx, y: sy });
+
+        // Two-finger pinch-to-zoom & pan: seamlessly cancel any in-progress 1-finger stroke
+        if (state.activePointers.size === 2) {
+          clearHoldTimer();
+          state.isDrawing = false;
+          state.currentStroke = null;
+          state.rawStrokeBeforeSnap = null;
+          state.snappedCurrent = false;
+          state.lassoPath = [];
+          state.lassoDragMode = null;
+          state.eraserCursor = null;
+
+          const pts = Array.from(state.activePointers.values());
+          const midScreen = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+          state.isPinching = true;
+          state.pinchStartDist = Math.max(10, dist(pts[0], pts[1]));
+          state.pinchStartScale = getActiveSheet().camera.scale;
+          state.pinchStartMidWorld = screenToWorld(midScreen.x, midScreen.y);
+          requestActiveRender();
+          return;
+        }
+
+        if (state.isPinching || state.activePointers.size > 2) return;
+
+        // Middle mouse or Spacebar or Pan tool -> Pan camera
+        if (e.button === 1 || state.spacePressed || state.tool === 'pan') {
+          state.panStartScreen = { x: sx, y: sy };
+          state.panStartCam = { ...getActiveSheet().camera };
+          return;
+        }
+
+        // Screenshot Crop Mode
+        if (state.tool === 'screenshot') {
+          state.isCropping = true;
+          state.cropRect = { x1: sx, y1: sy, x2: sx, y2: sy };
+          document.getElementById('snapConfirmBtn').classList.add('hidden');
+          requestActiveRender();
+          return;
+        }
+
+        const worldPt = screenToWorld(sx, sy);
+
+        // Lasso Select & Shift (with Tap-to-Select, Move, and Resize)
+        if (state.tool === 'lasso') {
+          const cam = getActiveSheet().camera;
+          if (state.selectedIds.size > 0 && state.selectionBBox) {
+            const b = state.selectionBBox;
+            const pad = 8 / cam.scale;
+            const handleX = b.maxX + pad;
+            const handleY = b.maxY + pad;
+
+            // Check bottom-right resize handle
+            if (dist(worldPt, { x: handleX, y: handleY }) <= 22 / cam.scale) {
+              state.lassoDragMode = 'scale';
+              state.lassoDragStartWorld = worldPt;
+              state.lassoOrigBBox = { ...b };
+              state.lassoOrigItems = new Map();
+              for (const item of getActiveSheet().items) {
+                if (state.selectedIds.has(item.id)) {
+                  state.lassoOrigItems.set(item.id, JSON.parse(JSON.stringify(item)));
+                }
+              }
+              return;
+            }
+
+            // Check inside selection bounding box -> Move
+            if (
+              worldPt.x >= b.minX - pad &&
+              worldPt.x <= b.maxX + pad &&
+              worldPt.y >= b.minY - pad &&
+              worldPt.y <= b.maxY + pad
+            ) {
+              state.lassoDragMode = 'move';
+              state.lassoDragStartWorld = worldPt;
+              state.lassoOrigItems = new Map();
+              for (const item of getActiveSheet().items) {
+                if (state.selectedIds.has(item.id)) {
+                  state.lassoOrigItems.set(item.id, JSON.parse(JSON.stringify(item)));
+                }
+              }
+              return;
+            }
+          }
+
+          // Start new lasso loop (or single tap)
+          clearSelection();
+          state.lassoDragMode = 'draw';
+          state.lassoPath = [worldPt];
+          requestActiveRender();
+          return;
+        }
+
+        // Circle / Lasso Eraser
+        if (state.tool === 'circle-eraser') {
+          clearSelection();
+          state.isDrawing = true;
+          state.lassoPath = [worldPt];
+          requestActiveRender();
+          return;
+        }
+
+        // Touch Eraser
+        if (state.tool === 'touch-eraser') {
+          clearSelection();
+          state.isDrawing = true;
+          state.touchErasedAny = false;
+          state.eraserCursor = { x: sx, y: sy };
+          eraseAtWorldPoint(worldPt);
+          requestActiveRender();
+          return;
+        }
+
+        // Pen / Auto-Shape / Highlighter — Immediate Start (Zero-Drop)
+        if (state.tool === 'pen' || state.tool === 'shape' || state.tool === 'highlighter') {
+          clearSelection();
+          const isHL = state.tool === 'highlighter';
+          state.isDrawing = true;
+          state.snappedCurrent = false;
+          state.rawStrokeBeforeSnap = null;
+          state.currentStroke = {
+            id: uid(),
+            type: 'stroke',
+            tool: isHL ? 'highlighter' : 'pen',
+            color: isHL && state.color === 'auto' ? '#eab308' : state.color,
+            size: isHL ? Math.max(12, state.size * 3.5) : state.size,
+            points: [worldPt]
+          };
+          state.holdAnchor = { x: sx, y: sy };
+          startHoldShapeTimer();
+          requestActiveRender();
+        }
+      });
+
+      canvas.addEventListener('pointermove', (e) => {
+        if (!state.activePointers.has(e.pointerId)) return;
+        const rect = canvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        state.activePointers.set(e.pointerId, { x: sx, y: sy });
+
+        // Handle 2-finger pinch-zoom + pan
+        if (state.isPinching && state.activePointers.size === 2) {
+          const pts = Array.from(state.activePointers.values());
+          const curDist = Math.max(10, dist(pts[0], pts[1]));
+          const midScreen = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+          const sheet = getActiveSheet();
+          const newScale = Math.max(0.15, Math.min(8, state.pinchStartScale * (curDist / state.pinchStartDist)));
+          sheet.camera.scale = newScale;
+          sheet.camera.x = state.pinchStartMidWorld.x - midScreen.x / newScale;
+          sheet.camera.y = state.pinchStartMidWorld.y - midScreen.y / newScale;
+          updateZoomLabel();
+          requestRender();
+          return;
+        }
+
+        if (state.isPinching) return;
+
+        // Panning
+        if (state.panStartScreen && state.panStartCam) {
+          const sheet = getActiveSheet();
+          const dx = (sx - state.panStartScreen.x) / sheet.camera.scale;
+          const dy = (sy - state.panStartScreen.y) / sheet.camera.scale;
+          sheet.camera.x = state.panStartCam.x - dx;
+          sheet.camera.y = state.panStartCam.y - dy;
+          requestRender();
+          return;
+        }
+
+        // Screenshot Crop Drag
+        if (state.tool === 'screenshot' && state.isCropping && state.cropRect) {
+          state.cropRect.x2 = sx;
+          state.cropRect.y2 = sy;
+          requestActiveRender();
+          return;
+        }
+
+        const worldPt = screenToWorld(sx, sy);
+
+        // Lasso Move / Scale / Draw
+        if (state.tool === 'lasso' && state.lassoDragMode) {
+          if (state.lassoDragMode === 'draw') {
+            const last = state.lassoPath[state.lassoPath.length - 1];
+            if (!last || dist(last, worldPt) > 3 / getActiveSheet().camera.scale) {
+              state.lassoPath.push(worldPt);
+              requestActiveRender();
+            }
+          } else if (state.lassoDragMode === 'move') {
+            const dx = worldPt.x - state.lassoDragStartWorld.x;
+            const dy = worldPt.y - state.lassoDragStartWorld.y;
+            const sheet = getActiveSheet();
+            for (const item of sheet.items) {
+              const orig = state.lassoOrigItems.get(item.id);
+              if (!orig) continue;
+              const clone = JSON.parse(JSON.stringify(orig));
+              translateItem(clone, dx, dy);
+              Object.assign(item, clone);
+            }
+            recomputeSelectionBBox();
+            requestRender();
+          } else if (state.lassoDragMode === 'scale') {
+            const ob = state.lassoOrigBBox;
+            const ox = ob.minX;
+            const oy = ob.minY;
+            const origDiag = Math.max(10, Math.hypot(ob.maxX - ob.minX, ob.maxY - ob.minY));
+            const curDiag = Math.max(10, Math.hypot(worldPt.x - ox, worldPt.y - oy));
+            const factor = curDiag / origDiag;
+            const sheet = getActiveSheet();
+            for (const item of sheet.items) {
+              const orig = state.lassoOrigItems.get(item.id);
+              if (!orig) continue;
+              scaleItemFromOrigin(orig, item, ox, oy, factor);
+            }
+            recomputeSelectionBBox();
+            requestRender();
+          }
+          return;
+        }
+
+        // Circle Eraser
+        if (state.tool === 'circle-eraser' && state.isDrawing) {
+          const last = state.lassoPath[state.lassoPath.length - 1];
+          if (!last || dist(last, worldPt) > 3 / getActiveSheet().camera.scale) {
+            state.lassoPath.push(worldPt);
+            requestActiveRender();
+          }
+          return;
+        }
+
+        // Touch Eraser
+        if (state.tool === 'touch-eraser' && state.isDrawing) {
+          state.eraserCursor = { x: sx, y: sy };
+          eraseAtWorldPoint(worldPt);
+          requestActiveRender();
+          return;
+        }
+
+        // Drawing Stroke (renders ONLY on transparent Active Overlay Canvas at 60 FPS)
+        if (state.isDrawing && state.currentStroke && !state.snappedCurrent) {
+          const pts = state.currentStroke.points;
+          const last = pts[pts.length - 1];
+          if (!last || dist(last, worldPt) > 1.5 / getActiveSheet().camera.scale) {
+            pts.push(worldPt);
+            requestActiveRender();
+          }
+          if (state.holdAnchor && dist(state.holdAnchor, { x: sx, y: sy }) > 6) {
+            state.holdAnchor = { x: sx, y: sy };
+            startHoldShapeTimer();
+          }
+        }
+      });
+
+      function finishPointer(e) {
+        try {
+          canvas.releasePointerCapture(e.pointerId);
+        } catch (_) {}
+
+        state.activePointers.delete(e.pointerId);
+
+        if (state.isPinching) {
+          if (state.activePointers.size === 0) {
+            state.isPinching = false;
+            scheduleAutoSave();
+          }
+          return;
+        }
+
+        if (state.panStartScreen) {
+          state.panStartScreen = null;
+          state.panStartCam = null;
+          scheduleAutoSave();
+          return;
+        }
+
+        // Screenshot Crop Finish
+        if (state.tool === 'screenshot' && state.isCropping) {
+          state.isCropping = false;
+          if (state.cropRect) {
+            const rw = Math.abs(state.cropRect.x2 - state.cropRect.x1);
+            const rh = Math.abs(state.cropRect.y2 - state.cropRect.y1);
+            if (rw > 16 && rh > 16) {
+              document.getElementById('snapConfirmBtn').classList.remove('hidden');
+            } else {
+              state.cropRect = null;
+            }
+          }
+          requestActiveRender();
+          return;
+        }
+
+        // Lasso Finish (Supports both Single-Tap Selection and Circle-to-Select)
+        if (state.tool === 'lasso' && state.lassoDragMode) {
+          const mode = state.lassoDragMode;
+          state.lassoDragMode = null;
+          if (mode === 'draw') {
+            const poly = state.lassoPath;
+            state.lassoPath = [];
+            const sheet = getActiveSheet();
+            let pathLen = 0;
+            for (let i = 1; i < poly.length; i++) pathLen += dist(poly[i - 1], poly[i]);
+
+            if (poly.length > 0 && pathLen < 12 / sheet.camera.scale) {
+              // Single-tap selection: pick top-most item under tap
+              const tapPt = poly[0];
+              const tapRadius = 14 / sheet.camera.scale;
+              for (let i = sheet.items.length - 1; i >= 0; i--) {
+                const item = sheet.items[i];
+                if (item.type === 'image' && sheet.settings.lockMedia) continue;
+                if (hitTestItem(item, tapPt, tapRadius)) {
+                  state.selectedIds.add(item.id);
+                  break;
+                }
+              }
+              recomputeSelectionBBox();
+            } else if (poly.length >= 3) {
+              for (const item of sheet.items) {
+                if (item.type === 'image' && sheet.settings.lockMedia) continue;
+                if (itemIntersectsPolygon(item, poly)) {
+                  state.selectedIds.add(item.id);
+                }
+              }
+              recomputeSelectionBBox();
+            }
+            requestActiveRender();
+          } else if (mode === 'move' || mode === 'scale') {
+            state.lassoOrigItems = null;
+            state.lassoOrigBBox = null;
+            commitHistory();
+          }
+          return;
+        }
+
+        // Circle / Shape Eraser Finish
+        if (state.tool === 'circle-eraser' && state.isDrawing) {
+          state.isDrawing = false;
+          const poly = state.lassoPath;
+          state.lassoPath = [];
+          if (poly.length >= 3) {
+            const sheet = getActiveSheet();
+            const beforeLen = sheet.items.length;
+            sheet.items = sheet.items.filter((item) => {
+              if (item.type === 'image' && sheet.settings.lockMedia) return true;
+              return !itemIntersectsPolygon(item, poly);
+            });
+            const erasedCount = beforeLen - sheet.items.length;
+            if (erasedCount > 0) {
+              commitHistory();
+              showToast(`Erased ${erasedCount} item${erasedCount > 1 ? 's' : ''}`);
+            }
+          }
+          requestRender();
+          return;
+        }
+
+        // Touch Eraser Finish
+        if (state.tool === 'touch-eraser' && state.isDrawing) {
+          state.isDrawing = false;
+          state.eraserCursor = null;
+          if (state.touchErasedAny) {
+            state.touchErasedAny = false;
+            commitHistory();
+          }
+          requestRender();
+          return;
+        }
+
+        // Drawing Stroke Finish (with 1-tap Revert Snap undo support)
+        if (state.isDrawing && state.currentStroke) {
+          clearHoldTimer();
+          state.isDrawing = false;
+          const sheet = getActiveSheet();
+          let finalItem = state.currentStroke;
+          let rawBefore = state.rawStrokeBeforeSnap;
+
+          if (state.tool === 'shape' && finalItem.type === 'stroke') {
+            const snapped = recognizeShapeFromStroke(finalItem);
+            if (snapped) {
+              rawBefore = finalItem;
+              finalItem = snapped;
+            }
+          }
+
+          if (rawBefore) {
+            rawBefore.bbox = computeItemBBox(rawBefore);
+            sheet.items.push(rawBefore);
+            commitHistory();
+            finalItem.bbox = computeItemBBox(finalItem);
+            sheet.items[sheet.items.length - 1] = finalItem;
+            commitHistory();
+          } else {
+            finalItem.bbox = computeItemBBox(finalItem);
+            sheet.items.push(finalItem);
+            commitHistory();
+          }
+
+          state.currentStroke = null;
+          state.rawStrokeBeforeSnap = null;
+          state.snappedCurrent = false;
+          requestRender();
+        }
+      }
+
+      canvas.addEventListener('pointerup', finishPointer);
+      canvas.addEventListener('pointercancel', finishPointer);
+      canvas.addEventListener('lostpointercapture', finishPointer);
+
+      // Mouse Wheel Zoom (around cursor)
+      canvas.addEventListener(
+        'wheel',
+        (e) => {
+          e.preventDefault();
+          const rect = canvas.getBoundingClientRect();
+          const sx = e.clientX - rect.left;
+          const sy = e.clientY - rect.top;
+          const sheet = getActiveSheet();
+          const worldBefore = screenToWorld(sx, sy);
+
+          const zoomFactor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+          const newScale = Math.max(0.15, Math.min(8, sheet.camera.scale * zoomFactor));
+          sheet.camera.scale = newScale;
+          sheet.camera.x = worldBefore.x - sx / newScale;
+          sheet.camera.y = worldBefore.y - sy / newScale;
+
+          updateZoomLabel();
+          scheduleAutoSave();
+          requestRender();
+        },
+        { passive: false }
+      );
+
+      // Keyboard Shortcuts
+      window.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+        if (e.code === 'Space') {
+          state.spacePressed = true;
+          canvas.style.cursor = 'grab';
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+          e.preventDefault();
+          if (e.shiftKey) redo();
+          else undo();
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+          e.preventDefault();
+          redo();
+        }
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          if (state.selectedIds.size > 0) deleteSelectedItems();
+        }
+        if (e.key === 'Escape') {
+          if (state.tool === 'screenshot') exitScreenshotMode();
+          clearSelection();
+          closeDrawer();
+        }
+      });
+
+      window.addEventListener('keyup', (e) => {
+        if (e.code === 'Space') {
+          state.spacePressed = false;
+          updateCanvasCursor();
+        }
+      });
+
+      window.addEventListener('resize', () => requestRender());
+
+      // --------------------------------------------------------------------------
+      // 10. IMAGE & HIGH-DPI PDF IMPORT FOR PRECISION ANNOTATION
+      // --------------------------------------------------------------------------
+      async function cacheMedia(mediaId, dataUrl) {
+        return new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            mediaCache.set(mediaId, { dataUrl, img });
+            resolve(img);
+          };
+          img.onerror = () => resolve(null);
+          img.src = dataUrl;
+        });
+      }
+
+      async function handleMediaUpload(file) {
+        if (!file) return;
+        const sheet = getActiveSheet();
+        const cam = sheet.camera;
+        const viewCenterX = cam.x + canvas.clientWidth / (2 * cam.scale);
+        const viewTopY = cam.y + 40 / cam.scale;
+
+        if (file.type === 'application/pdf') {
+          if (!window.pdfjsLib) {
+            showToast('PDF engine unavailable offline. Connect to internet to import PDFs.');
+            return;
+          }
+          try {
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+              'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            showToast('Loading PDF...');
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            const totalPages = pdf.numPages;
+
+            const renderPages = async (startPage, endPage) => {
+              let currentY = viewTopY;
+              const targetWorldWidth = Math.min(760, (canvas.clientWidth * 0.85) / cam.scale);
+              const count = endPage - startPage + 1;
+
+              for (let p = startPage; p <= endPage; p++) {
+                showToast(`Rendering PDF page ${p} of ${endPage}...`);
+                const page = await pdf.getPage(p);
+                const baseVp = page.getViewport({ scale: 1 });
+                const renderScale = Math.min(2.2, 1800 / baseVp.width);
+                const vp = page.getViewport({ scale: renderScale });
+
+                const offCanvas = document.createElement('canvas');
+                offCanvas.width = Math.round(vp.width);
+                offCanvas.height = Math.round(vp.height);
+                const offCtx = offCanvas.getContext('2d');
+                offCtx.fillStyle = '#ffffff';
+                offCtx.fillRect(0, 0, offCanvas.width, offCanvas.height);
+
+                await page.render({ canvasContext: offCtx, viewport: vp }).promise;
+
+                const dataUrl = offCanvas.toDataURL('image/jpeg', 0.9);
+                const mediaId = uid();
+                await dbPut('media', { id: mediaId, dataUrl });
+                await cacheMedia(mediaId, dataUrl);
+
+                const aspect = vp.height / vp.width;
+                const worldW = targetWorldWidth;
+                const worldH = worldW * aspect;
+
+                const item = {
+                  id: uid(),
+                  type: 'image',
+                  mediaId,
+                  x: viewCenterX - worldW / 2,
+                  y: currentY,
+                  width: worldW,
+                  height: worldH,
+                  pageLabel: `${file.name} — Page ${p}/${totalPages}`
+                };
+                item.bbox = computeItemBBox(item);
+                sheet.items.push(item);
+
+                currentY += worldH + 28;
+              }
+              commitHistory();
+              requestRender();
+              showToast(`Imported ${count} PDF page${count > 1 ? 's' : ''}`);
+            };
+
+            if (totalPages > 3) {
+              const defaultEnd = Math.min(5, totalPages);
+              showModal({
+                title: `Import PDF (${totalPages} pages)`,
+                bodyHtml: `
+                  <p class="text-xs text-slate-500 mb-3">Select a page range to keep mobile memory fast:</p>
+                  <div class="flex items-center gap-2">
+                    <div class="flex-1">
+                      <label class="text-[11px] font-semibold text-slate-500 block mb-1">From</label>
+                      <input id="pdfStartInput" type="number" min="1" max="${totalPages}" value="1" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-slate-800 text-sm" />
+                    </div>
+                    <div class="flex-1">
+                      <label class="text-[11px] font-semibold text-slate-500 block mb-1">To</label>
+                      <input id="pdfEndInput" type="number" min="1" max="${totalPages}" value="${defaultEnd}" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-slate-800 text-sm" />
+                    </div>
+                  </div>
+                `,
+                actions: [
+                  { label: 'Cancel' },
+                  {
+                    label: 'Import Pages',
+                    className: 'px-4 py-2 rounded-xl text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700',
+                    onClick: () => {
+                      const s = Math.max(1, Math.min(totalPages, parseInt(document.getElementById('pdfStartInput').value, 10) || 1));
+                      const e = Math.max(s, Math.min(totalPages, parseInt(document.getElementById('pdfEndInput').value, 10) || defaultEnd));
+                      renderPages(s, e);
+                    }
+                  }
+                ]
+              });
+            } else {
+              await renderPages(1, totalPages);
+            }
+          } catch (err) {
+            console.error(err);
+            showToast('Failed to read PDF file.');
+          }
+        } else if (file.type.startsWith('image/')) {
+          try {
+            const dataUrl = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result);
+              reader.onerror = reject;
+              reader.readAsDataURL(file);
+            });
+            const mediaId = uid();
+            const img = await cacheMedia(mediaId, dataUrl);
+            if (!img) throw new Error('Image load error');
+            await dbPut('media', { id: mediaId, dataUrl });
+
+            const maxW = Math.min(680, (canvas.clientWidth * 0.78) / cam.scale);
+            const scaleFit = img.width > maxW ? maxW / img.width : 1;
+            const worldW = img.width * scaleFit;
+            const worldH = img.height * scaleFit;
+
+            const item = {
+              id: uid(),
+              type: 'image',
+              mediaId,
+              x: viewCenterX - worldW / 2,
+              y: viewTopY,
+              width: worldW,
+              height: worldH
+            };
+            item.bbox = computeItemBBox(item);
+            sheet.items.push(item);
+            commitHistory();
+            requestRender();
+            showToast('Image added to sheet');
+          } catch (err) {
+            console.error(err);
+            showToast('Failed to import image.');
+          }
+        }
+      }
+
+      // --------------------------------------------------------------------------
+      // 11. SCREENSHOT CAPTURE & CONTINUOUS PDF EXPORT
+      // --------------------------------------------------------------------------
+      function downloadDataUrl(dataUrl, filename) {
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+
+      function captureScreenshot(rect) {
+        const sheet = getActiveSheet();
+        const width = canvas.clientWidth;
+        const height = canvas.clientHeight;
+        const dpr = Math.max(2, window.devicePixelRatio || 1);
+
+        const fullCanvas = document.createElement('canvas');
+        fullCanvas.width = Math.round(width * dpr);
+        fullCanvas.height = Math.round(height * dpr);
+        const fCtx = fullCanvas.getContext('2d');
+        fCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        renderStaticScene(fCtx, width, height, sheet);
+
+        if (!rect) {
+          downloadDataUrl(fullCanvas.toDataURL('image/png'), `${sheet.name.replace(/\s+/g, '_')}_snap.png`);
+          showToast('Screenshot saved!');
+          exitScreenshotMode();
+          return;
+        }
+
+        const rx = Math.max(0, Math.min(rect.x1, rect.x2));
+        const ry = Math.max(0, Math.min(rect.y1, rect.y2));
+        const rw = Math.min(width - rx, Math.abs(rect.x2 - rect.x1));
+        const rh = Math.min(height - ry, Math.abs(rect.y2 - rect.y1));
+
+        const cropCanvas = document.createElement('canvas');
+        cropCanvas.width = Math.round(rw * dpr);
+        cropCanvas.height = Math.round(rh * dpr);
+        const cCtx = cropCanvas.getContext('2d');
+        cCtx.drawImage(
+          fullCanvas,
+          Math.round(rx * dpr),
+          Math.round(ry * dpr),
+          Math.round(rw * dpr),
+          Math.round(rh * dpr),
+          0,
+          0,
+          cropCanvas.width,
+          cropCanvas.height
+        );
+
+        downloadDataUrl(cropCanvas.toDataURL('image/png'), `${sheet.name.replace(/\s+/g, '_')}_crop.png`);
+        showToast('Cropped screenshot saved!');
+        exitScreenshotMode();
+      }
+
+      function exitScreenshotMode() {
+        state.cropRect = null;
+        state.isCropping = false;
+        document.getElementById('screenshotBar').classList.add('hidden');
+        document.getElementById('snapConfirmBtn').classList.add('hidden');
+        setTool('pen');
+      }
+
+      function getContentBounds(sheet) {
+        if (sheet.items.length === 0) return null;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const item of sheet.items) {
+          const b = item.bbox || (item.bbox = computeItemBBox(item));
+          if (b.minX < minX) minX = b.minX;
+          if (b.minY < minY) minY = b.minY;
+          if (b.maxX > maxX) maxX = b.maxX;
+          if (b.maxY > maxY) maxY = b.maxY;
+        }
+        return { minX, minY, maxX, maxY };
+      }
+
+      async function exportToPDF(mode) {
+        if (!window.jspdf) {
+          showToast('PDF export unavailable offline. Connect to internet to export PDF.');
+          return;
+        }
+        const sheet = getActiveSheet();
+        const { jsPDF } = window.jspdf;
+
+        try {
+          showToast('Generating PDF...');
+          if (mode === 'view') {
+            const w = canvas.clientWidth;
+            const h = canvas.clientHeight;
+            const scale = 2;
+            const off = document.createElement('canvas');
+            off.width = Math.round(w * scale);
+            off.height = Math.round(h * scale);
+            const oCtx = off.getContext('2d');
+            oCtx.setTransform(scale, 0, 0, scale, 0, 0);
+            renderStaticScene(oCtx, w, h, sheet);
+
+            const orientation = w >= h ? 'l' : 'p';
+            const pdf = new jsPDF({ orientation, unit: 'px', format: [w, h] });
+            pdf.addImage(off.toDataURL('image/jpeg', 0.94), 'JPEG', 0, 0, w, h);
+            pdf.save(`${sheet.name.replace(/\s+/g, '_')}_view.pdf`);
+            showToast('PDF exported!');
+            return;
+          }
+
+          // Entire Sheet Content as a Continuous Single-Page PDF (never slices equations)
+          const bounds = getContentBounds(sheet);
+          if (!bounds) {
+            showToast('Sheet is blank — nothing to export.');
+            return;
+          }
+
+          const pad = 40;
+          const contentX = bounds.minX - pad;
+          const contentY = bounds.minY - pad;
+          const contentW = Math.max(200, bounds.maxX - bounds.minX + pad * 2);
+          const contentH = Math.max(200, bounds.maxY - bounds.minY + pad * 2);
+
+          const maxDim = 3200;
+          const renderScale = Math.min(2, maxDim / Math.max(contentW, contentH));
+          const off = document.createElement('canvas');
+          off.width = Math.round(contentW * renderScale);
+          off.height = Math.round(contentH * renderScale);
+          const oCtx = off.getContext('2d');
+          oCtx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
+
+          const virtualSheet = {
+            ...sheet,
+            camera: { x: contentX, y: contentY, scale: 1 }
+          };
+          renderStaticScene(oCtx, contentW, contentH, virtualSheet);
+
+          const orientation = contentW >= contentH ? 'l' : 'p';
+          const pdf = new jsPDF({
+            orientation,
+            unit: 'pt',
+            format: [contentW, contentH]
+          });
+          pdf.addImage(off.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, contentW, contentH);
+          pdf.save(`${sheet.name.replace(/\s+/g, '_')}.pdf`);
+          showToast('Continuous PDF exported!');
+        } catch (err) {
+          console.error(err);
+          showToast('PDF export failed.');
+        }
+      }
+
+      // --------------------------------------------------------------------------
+      // 12. PERSISTENCE (AUTO-SAVE + JSON BACKUP / RESTORE)
+      // --------------------------------------------------------------------------
+      function scheduleAutoSave() {
+        const status = document.getElementById('saveStatusText');
+        if (!dbAvailable) {
+          status.textContent = 'Memory only';
+          return;
+        }
+        status.textContent = 'Saving...';
+        if (state.saveTimer) clearTimeout(state.saveTimer);
+        state.saveTimer = setTimeout(async () => {
+          try {
+            const sheet = getActiveSheet();
+            if (sheet) {
+              await dbPut('sheets', sheet);
+              await dbPut('meta', { key: 'activeSheetId', value: sheet.id });
+            }
+            status.textContent = 'Saved locally';
+          } catch (_) {
+            status.textContent = 'Memory only';
+          }
+        }, 450);
+      }
+
+      async function loadAllFromDB() {
+        try {
+          const savedSheets = await dbGetAll('sheets');
+          const savedMedia = await dbGetAll('media');
+
+          await Promise.all(savedMedia.map((m) => cacheMedia(m.id, m.dataUrl)));
+
+          if (savedSheets.length > 0) {
+            state.sheets = savedSheets.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+            const meta = await dbGet('meta', 'activeSheetId');
+            state.activeSheetId =
+              meta && state.sheets.some((s) => s.id === meta.value)
+                ? meta.value
+                : state.sheets[0].id;
+          } else {
+            const first = createNewSheetObj('Rough Sheet 1');
+            state.sheets = [first];
+            state.activeSheetId = first.id;
+            await dbPut('sheets', first);
+          }
+        } catch (_) {
+          const first = createNewSheetObj('Rough Sheet 1');
+          state.sheets = [first];
+          state.activeSheetId = first.id;
+        }
+      }
+
+      async function exportBackupJSON() {
+        try {
+          showToast('Preparing backup...');
+          const allMedia = dbAvailable
+            ? await dbGetAll('media')
+            : Array.from(mediaCache.entries()).map(([id, val]) => ({ id, dataUrl: val.dataUrl }));
+          const payload = {
+            version: 2,
+            exportedAt: new Date().toISOString(),
+            activeSheetId: state.activeSheetId,
+            sheets: state.sheets,
+            media: allMedia
+          };
+          const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          downloadDataUrl(url, `RoughSheet_Backup_${new Date().toISOString().slice(0, 10)}.json`);
+          setTimeout(() => URL.revokeObjectURL(url), 3000);
+          showToast('Backup JSON downloaded');
+        } catch (err) {
+          console.error(err);
+          showToast('Backup failed');
+        }
+      }
+
+      async function restoreBackupJSON(file) {
+        if (!file) return;
+        try {
+          const text = await file.text();
+          const data = JSON.parse(text);
+          if (!Array.isArray(data.sheets) || data.sheets.length === 0) {
+            showToast('Invalid backup file');
+            return;
+          }
+          if (Array.isArray(data.media)) {
+            for (const m of data.media) {
+              await dbPut('media', m);
+              await cacheMedia(m.id, m.dataUrl);
+            }
+          }
+          for (const s of data.sheets) {
+            await dbPut('sheets', s);
+          }
+          state.sheets = data.sheets;
+          state.activeSheetId = data.activeSheetId || data.sheets[0].id;
+          await dbPut('meta', { key: 'activeSheetId', value: state.activeSheetId });
+          state.history.clear();
+          initHistoryForSheet(getActiveSheet());
+          syncUIFromActiveSheet();
+          requestRender();
+          showToast(`Restored ${data.sheets.length} sheet(s)!`);
+        } catch (err) {
+          console.error(err);
+          showToast('Could not parse JSON backup');
+        }
+      }
+
+      // --------------------------------------------------------------------------
+      // 13. UI CONTROLS, DRAWER, TOAST & CUSTOM MODALS
+      // --------------------------------------------------------------------------
+      const toolDrawer = document.getElementById('toolDrawer');
+      const drawerBackdrop = document.getElementById('drawerBackdrop');
+
+      function openDrawer() {
+        toolDrawer.classList.add('open');
+        drawerBackdrop.classList.remove('hidden');
+      }
+      function closeDrawer() {
+        toolDrawer.classList.remove('open');
+        drawerBackdrop.classList.add('hidden');
+      }
+
+      function showToast(msg) {
+        const container = document.getElementById('toastContainer');
+        const el = document.createElement('div');
+        el.className = 'glass-panel px-3.5 py-2 rounded-2xl text-xs font-semibold text-slate-800 shadow-lg transition-all duration-200';
+        if (getActiveSheet()?.settings.theme === 'dark') {
+          el.classList.replace('text-slate-800', 'text-slate-100');
+        }
+        el.textContent = msg;
+        container.appendChild(el);
+        setTimeout(() => {
+          el.style.opacity = '0';
+          el.style.transform = 'translateY(6px)';
+          setTimeout(() => el.remove(), 220);
+        }, 2100);
+      }
+
+      function showModal({ title, bodyHtml, actions }) {
+        const overlay = document.getElementById('modalOverlay');
+        document.getElementById('modalTitle').textContent = title;
+        document.getElementById('modalBody').innerHTML = bodyHtml;
+        const actionsEl = document.getElementById('modalActions');
+        actionsEl.innerHTML = '';
+        for (const act of actions) {
+          const btn = document.createElement('button');
+          btn.textContent = act.label;
+          btn.className =
+            act.className ||
+            'px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition';
+          btn.addEventListener('click', () => {
+            if (act.onClick) act.onClick();
+            if (!act.keepOpen) overlay.classList.add('hidden');
+          });
+          actionsEl.appendChild(btn);
+        }
+        overlay.classList.remove('hidden');
+      }
+
+      function updateCanvasCursor() {
+        if (state.tool === 'pan') canvas.style.cursor = 'grab';
+        else if (state.tool === 'touch-eraser') canvas.style.cursor = 'none';
+        else canvas.style.cursor = 'crosshair';
+      }
+
+      function setTool(toolName) {
+        state.tool = toolName;
+        if (toolName !== 'lasso') clearSelection();
+        document.querySelectorAll('.tool-btn').forEach((btn) => {
+          btn.classList.toggle('active', btn.dataset.tool === toolName);
+        });
+        const indicator = document.getElementById('activeToolIndicator');
+        const toolColors = {
+          pen: '#2563eb',
+          shape: '#7c3aed',
+          highlighter: '#eab308',
+          'touch-eraser': '#ef4444',
+          'circle-eraser': '#dc2626',
+          lasso: '#0ea5e9',
+          pan: '#64748b',
+          screenshot: '#10b981'
+        };
+        indicator.style.backgroundColor = toolColors[toolName] || '#2563eb';
+
+        if (toolName === 'screenshot') {
+          state.cropRect = null;
+          document.getElementById('screenshotBar').classList.remove('hidden');
+          document.getElementById('snapConfirmBtn').classList.add('hidden');
+          closeDrawer();
+        } else {
+          document.getElementById('screenshotBar').classList.add('hidden');
+        }
+        updateCanvasCursor();
+        requestActiveRender();
+      }
+
+      function updateZoomLabel() {
+        const pct = Math.round(getActiveSheet().camera.scale * 100);
+        document.getElementById('zoomPercentLabel').textContent = `${pct}%`;
+      }
+
+      function applyThemeUI(theme) {
+        const body = document.getElementById('appBody');
+        const metaTheme = document.getElementById('metaThemeColor');
+        if (theme === 'dark') {
+          body.classList.add('dark-ui');
+          metaTheme.setAttribute('content', '#0f172a');
+        } else if (theme === 'cream') {
+          body.classList.remove('dark-ui');
+          metaTheme.setAttribute('content', '#fbf7ee');
+        } else {
+          body.classList.remove('dark-ui');
+          metaTheme.setAttribute('content', '#ffffff');
+        }
+        document.querySelectorAll('.theme-btn').forEach((btn) => {
+          const active = btn.dataset.theme === theme;
+          btn.classList.toggle('border-blue-600', active);
+          btn.classList.toggle('border-2', active);
+        });
+      }
+
+      function syncUIFromActiveSheet() {
+        const sheet = getActiveSheet();
+        if (!sheet) return;
+
+        const sel = document.getElementById('sheetSelect');
+        sel.innerHTML = '';
+        for (const s of state.sheets) {
+          const opt = document.createElement('option');
+          opt.value = s.id;
+          opt.textContent = s.name;
+          opt.selected = s.id === sheet.id;
+          sel.appendChild(opt);
+        }
+
+        document.querySelectorAll('.grid-btn').forEach((btn) => {
+          const active = btn.dataset.grid === sheet.settings.grid;
+          btn.classList.toggle('bg-white', active);
+          btn.classList.toggle('shadow-sm', active);
+          btn.classList.toggle('text-slate-900', active);
+          btn.classList.toggle('text-slate-500', !active);
+        });
+
+        applyThemeUI(sheet.settings.theme);
+
+        const lockBtn = document.getElementById('lockMediaToggle');
+        if (sheet.settings.lockMedia) {
+          lockBtn.classList.remove('bg-slate-300', 'justify-start');
+          lockBtn.classList.add('bg-blue-600', 'justify-end');
+        } else {
+          lockBtn.classList.remove('bg-blue-600', 'justify-end');
+          lockBtn.classList.add('bg-slate-300', 'justify-start');
+        }
+
+        updateZoomLabel();
+        initHistoryForSheet(sheet);
+        updateUndoRedoButtons();
+      }
+
+      function deleteSelectedItems() {
+        const sheet = getActiveSheet();
+        if (state.selectedIds.size === 0) return;
+        sheet.items = sheet.items.filter((it) => !state.selectedIds.has(it.id));
+        clearSelection();
+        commitHistory();
+        requestRender();
+      }
+
+      function duplicateSelectedItems() {
+        const sheet = getActiveSheet();
+        if (state.selectedIds.size === 0) return;
+        const newIds = new Set();
+        const offset = 24 / sheet.camera.scale;
+        const clones = [];
+        for (const item of sheet.items) {
+          if (!state.selectedIds.has(item.id)) continue;
+          const clone = JSON.parse(JSON.stringify(item));
+          clone.id = uid();
+          translateItem(clone, offset, offset);
+          clones.push(clone);
+          newIds.add(clone.id);
+        }
+        sheet.items.push(...clones);
+        state.selectedIds = newIds;
+        recomputeSelectionBBox();
+        commitHistory();
+        requestRender();
+        showToast('Duplicated selection');
+      }
+
+      function jumpToContent() {
+        const sheet = getActiveSheet();
+        const bounds = getContentBounds(sheet);
+        if (!bounds) {
+          sheet.camera = { x: 0, y: 0, scale: 1 };
+          updateZoomLabel();
+          requestRender();
+          showToast('Centered on origin');
+          return;
+        }
+        const cw = bounds.maxX - bounds.minX + 80;
+        const ch = bounds.maxY - bounds.minY + 80;
+        const scale = Math.max(0.25, Math.min(1.5, Math.min(canvas.clientWidth / cw, canvas.clientHeight / ch)));
+        const cx = (bounds.minX + bounds.maxX) / 2;
+        const cy = (bounds.minY + bounds.maxY) / 2;
+        sheet.camera.scale = scale;
+        sheet.camera.x = cx - canvas.clientWidth / (2 * scale);
+        sheet.camera.y = cy - canvas.clientHeight / (2 * scale);
+        updateZoomLabel();
+        scheduleAutoSave();
+        requestRender();
+      }
+
+      async function toggleFullscreen() {
+        try {
+          if (!document.fullscreenElement) {
+            state.userWantedFullscreen = true;
+            await document.documentElement.requestFullscreen();
+            document.getElementById('restoreFullscreenPill').classList.add('hidden');
+            showToast('Fullscreen enabled');
+          } else {
+            state.userWantedFullscreen = false;
+            await document.exitFullscreen();
+            document.getElementById('restoreFullscreenPill').classList.add('hidden');
+            showToast('Exited fullscreen');
+          }
+        } catch (_) {
+          showToast('Fullscreen not supported in this preview frame');
+        }
+      }
+
+      document.addEventListener('fullscreenchange', () => {
+        const pill = document.getElementById('restoreFullscreenPill');
+        if (document.fullscreenElement) {
+          pill.classList.add('hidden');
+        } else if (state.userWantedFullscreen) {
+          pill.classList.remove('hidden');
+        }
+      });
+
+      document.getElementById('restoreFullscreenBtn').addEventListener('click', async () => {
+        try {
+          await document.documentElement.requestFullscreen();
+          document.getElementById('restoreFullscreenPill').classList.add('hidden');
+        } catch (_) {
+          showToast('Could not restore fullscreen');
+        }
+      });
+
+      document.getElementById('dismissFullscreenPillBtn').addEventListener('click', () => {
+        state.userWantedFullscreen = false;
+        document.getElementById('restoreFullscreenPill').classList.add('hidden');
+      });
+
+      // --------------------------------------------------------------------------
+      // 14. WIRE UP ALL UI EVENTS
+      // --------------------------------------------------------------------------
+      document.getElementById('drawerToggleBtn').addEventListener('click', () => {
+        if (toolDrawer.classList.contains('open')) closeDrawer();
+        else openDrawer();
+      });
+      document.getElementById('closeDrawerBtn').addEventListener('click', closeDrawer);
+      drawerBackdrop.addEventListener('click', closeDrawer);
+
+      document.getElementById('quickUndoBtn').addEventListener('click', undo);
+      document.getElementById('quickRedoBtn').addEventListener('click', redo);
+      document.getElementById('fullscreenBtn').addEventListener('click', toggleFullscreen);
+
+      document.querySelectorAll('.tool-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          setTool(btn.dataset.tool);
+          if (window.innerWidth < 768) closeDrawer();
+        });
+      });
+
+      document.querySelectorAll('.color-swatch').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          state.color = btn.dataset.color;
+          document.querySelectorAll('.color-swatch').forEach((b) => {
+            const active = b === btn;
+            b.classList.toggle('border-blue-600', active);
+            b.classList.toggle('ring-2', active);
+            b.classList.toggle('ring-blue-500/30', active);
+            b.classList.toggle('border-white', !active);
+          });
+          document.getElementById('sizeDotPreview').style.backgroundColor =
+            state.color === 'auto' ? '#0f172a' : state.color;
+        });
+      });
+
+      const sizeSlider = document.getElementById('strokeSizeSlider');
+      sizeSlider.addEventListener('input', () => {
+        state.size = parseFloat(sizeSlider.value);
+        document.getElementById('sizeValueLabel').textContent = `${state.size.toFixed(1)} px`;
+        const dotSize = Math.max(4, Math.min(22, state.size + 2));
+        const dot = document.getElementById('sizeDotPreview');
+        dot.style.width = `${dotSize}px`;
+        dot.style.height = `${dotSize}px`;
+      });
+
+      document.querySelectorAll('.grid-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          getActiveSheet().settings.grid = btn.dataset.grid;
+          syncUIFromActiveSheet();
+          scheduleAutoSave();
+          requestRender();
+        });
+      });
+
+      document.querySelectorAll('.theme-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          getActiveSheet().settings.theme = btn.dataset.theme;
+          syncUIFromActiveSheet();
+          scheduleAutoSave();
+          requestRender();
+        });
+      });
+
+      document.getElementById('lockMediaToggle').addEventListener('click', () => {
+        const sheet = getActiveSheet();
+        sheet.settings.lockMedia = !sheet.settings.lockMedia;
+        syncUIFromActiveSheet();
+        scheduleAutoSave();
+        showToast(sheet.settings.lockMedia ? 'Media locked' : 'Media unlocked');
+      });
+
+      document.getElementById('jumpContentBtn').addEventListener('click', () => {
+        jumpToContent();
+        closeDrawer();
+      });
+
+      document.getElementById('resetZoomBtn').addEventListener('click', () => {
+        const sheet = getActiveSheet();
+        const cx = sheet.camera.x + canvas.clientWidth / (2 * sheet.camera.scale);
+        const cy = sheet.camera.y + canvas.clientHeight / (2 * sheet.camera.scale);
+        sheet.camera.scale = 1;
+        sheet.camera.x = cx - canvas.clientWidth / 2;
+        sheet.camera.y = cy - canvas.clientHeight / 2;
+        updateZoomLabel();
+        scheduleAutoSave();
+        requestRender();
+      });
+
+      document.getElementById('selDuplicateBtn').addEventListener('click', duplicateSelectedItems);
+      document.getElementById('selDeleteBtn').addEventListener('click', deleteSelectedItems);
+      document.getElementById('selDoneBtn').addEventListener('click', clearSelection);
+
+      document.getElementById('snapFullBtn').addEventListener('click', () => captureScreenshot(null));
+      document.getElementById('snapConfirmBtn').addEventListener('click', () => captureScreenshot(state.cropRect));
+      document.getElementById('snapCancelBtn').addEventListener('click', exitScreenshotMode);
+
+      document.getElementById('sheetSelect').addEventListener('change', async (e) => {
+        clearSelection();
+        state.activeSheetId = e.target.value;
+        await dbPut('meta', { key: 'activeSheetId', value: state.activeSheetId });
+        syncUIFromActiveSheet();
+        requestRender();
+      });
+
+      document.getElementById('newSheetBtn').addEventListener('click', async () => {
+        const num = state.sheets.length + 1;
+        const fresh = createNewSheetObj(`Rough Sheet ${num}`);
+        state.sheets.unshift(fresh);
+        state.activeSheetId = fresh.id;
+        await dbPut('sheets', fresh);
+        await dbPut('meta', { key: 'activeSheetId', value: fresh.id });
+        clearSelection();
+        syncUIFromActiveSheet();
+        requestRender();
+        showToast(`Created "${fresh.name}"`);
+      });
+
+      document.getElementById('renameSheetBtn').addEventListener('click', () => {
+        const sheet = getActiveSheet();
+        showModal({
+          title: 'Rename Sheet',
+          bodyHtml: `<input id="renameInput" type="text" value="${sheet.name.replace(/"/g, '&quot;')}" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />`,
+          actions: [
+            { label: 'Cancel' },
+            {
+              label: 'Save',
+              className: 'px-4 py-2 rounded-xl text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700',
+              onClick: () => {
+                const val = document.getElementById('renameInput').value.trim();
+                if (val) {
+                  sheet.name = val;
+                  syncUIFromActiveSheet();
+                  scheduleAutoSave();
+                }
+              }
+            }
+          ]
+        });
+        setTimeout(() => document.getElementById('renameInput')?.focus(), 50);
+      });
+
+      document.getElementById('deleteSheetBtn').addEventListener('click', () => {
+        if (state.sheets.length <= 1) {
+          showToast('Cannot delete the only sheet');
+          return;
+        }
+        const sheet = getActiveSheet();
+        showModal({
+          title: 'Delete Sheet?',
+          bodyHtml: `Permanently delete <strong>${sheet.name}</strong>?`,
+          actions: [
+            { label: 'Cancel' },
+            {
+              label: 'Delete',
+              className: 'px-4 py-2 rounded-xl text-xs font-semibold bg-rose-600 text-white hover:bg-rose-700',
+              onClick: async () => {
+                await dbDelete('sheets', sheet.id);
+                state.sheets = state.sheets.filter((s) => s.id !== sheet.id);
+                state.activeSheetId = state.sheets[0].id;
+                await dbPut('meta', { key: 'activeSheetId', value: state.activeSheetId });
+                clearSelection();
+                syncUIFromActiveSheet();
+                requestRender();
+                showToast('Sheet deleted');
+              }
+            }
+          ]
+        });
+      });
+
+      const mediaInput = document.getElementById('mediaUploadInput');
+      document.getElementById('importMediaBtn').addEventListener('click', () => {
+        mediaInput.value = '';
+        mediaInput.click();
+      });
+      mediaInput.addEventListener('change', (e) => {
+        if (e.target.files[0]) {
+          closeDrawer();
+          handleMediaUpload(e.target.files[0]);
+        }
+      });
+
+      document.getElementById('openExportPdfBtn').addEventListener('click', () => {
+        closeDrawer();
+        showModal({
+          title: 'Export Sheet to PDF',
+          bodyHtml: 'Choose how you want to export your rough work:',
+          actions: [
+            { label: 'Cancel' },
+            {
+              label: 'Current View',
+              className: 'px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 text-white hover:bg-slate-900',
+              onClick: () => exportToPDF('view')
+            },
+            {
+              label: 'Entire Content',
+              className: 'px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700',
+              onClick: () => exportToPDF('all')
+            }
+          ]
+        });
+      });
+
+      document.getElementById('backupJsonBtn').addEventListener('click', exportBackupJSON);
+      const jsonInput = document.getElementById('jsonRestoreInput');
+      document.getElementById('restoreJsonBtn').addEventListener('click', () => {
+        jsonInput.value = '';
+        jsonInput.click();
+      });
+      jsonInput.addEventListener('change', (e) => {
+        if (e.target.files[0]) restoreBackupJSON(e.target.files[0]);
+      });
+
+      document.getElementById('clearSheetBtn').addEventListener('click', () => {
+        showModal({
+          title: 'Clear Current Sheet?',
+          bodyHtml: 'This will remove all strokes, shapes, and media on this sheet. You can still Undo this step.',
+          actions: [
+            { label: 'Cancel' },
+            {
+              label: 'Clear All',
+              className: 'px-4 py-2 rounded-xl text-xs font-semibold bg-rose-600 text-white hover:bg-rose-700',
+              onClick: () => {
+                getActiveSheet().items = [];
+                clearSelection();
+                commitHistory();
+                requestRender();
+                closeDrawer();
+                showToast('Sheet cleared (Undo available)');
+              }
+            }
+          ]
+        });
+      });
+
+      // --------------------------------------------------------------------------
+      // 15. INITIALIZATION
+      // --------------------------------------------------------------------------
+      async function boot() {
+        await loadAllFromDB();
+        syncUIFromActiveSheet();
+        requestRender();
+        requestAnimationFrame(renderLoop);
+      }
+      boot();
+    })();
+  </script>
+</body>
+</html>
