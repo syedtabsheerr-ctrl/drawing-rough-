@@ -1,14 +1,19 @@
 {
-  "name":"RoughSpace — Infinite Notebook",
-  "short_name":"RoughSpace",
-  "description":"A private local infinite rough notebook.",
-  "start_url":"./",
-  "scope":"./",
-  "display":"standalone",
-  "orientation":"any",
-  "background_color":"#ffffff",
-  "theme_color":"#f7f8fa",
-  "icons":[
-    {"src":"./icons/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}
+  "name": "RoughSheet — Infinite Canvas & PDF Annotator",
+  "short_name": "RoughSheet",
+  "description": "Private local infinite canvas and PDF annotation notebook.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
   ]
 }
