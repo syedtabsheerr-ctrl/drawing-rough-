@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#f7f8fa"><link rel="manifest" href="./manifest.webmanifest">
+<title>RoughSpace — Infinite Notebook</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#f8fafc;font-family:system-ui,-apple-system,Segoe UI,sans-serif;touch-action:none}canvas{width:100%;height:100%;display:block;touch-action:none}
+.panel{background:#ffffffed;border:1px solid #dce2eb;border-radius:15px;box-shadow:0 5px 22px #18223020;backdrop-filter:blur(14px)}
+#top{position:fixed;top:calc(env(safe-area-inset-top) + 9px);left:9px;right:9px;display:flex;gap:7px;align-items:center;pointer-events:none}#top>*{pointer-events:auto}.group{display:flex;align-items:center;padding:4px;gap:3px}.btn{border:0;background:transparent;color:#263449;border-radius:11px;min-width:39px;height:39px;font-size:17px}.btn:active{background:#eaf0fb}.brand{font-weight:750;font-size:14px;padding:0 7px}.readout{font-size:11px;color:#637087;padding:0 8px}
+#tools{position:fixed;bottom:calc(env(safe-area-inset-bottom) + 10px);left:50%;transform:translateX(-50%);display:flex;gap:3px;padding:5px;max-width:calc(100vw - 12px);overflow-x:auto}.tool{border:0;background:transparent;border-radius:12px;min-width:46px;height:48px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:9px;color:#45536a;gap:1px}.tool b{font-size:18px}.tool.active{background:#e8efff;color:#174bc4}
+#drawer{position:fixed;z-index:3;top:calc(env(safe-area-inset-top) + 60px);bottom:calc(env(safe-area-inset-bottom) + 70px);left:9px;width:min(300px,calc(100vw - 18px));padding:14px;overflow:auto;transform:translateX(-115%);transition:.2s}#drawer.open{transform:translateX(0)}.section{padding:11px 0;border-bottom:1px solid #e7ebf1}.section:last-child{border:0}.heading{font-size:10px;letter-spacing:1px;color:#8792a3;font-weight:800;margin:0 0 9px}.actions{display:flex;gap:7px;flex-wrap:wrap}.action{border:0;border-radius:10px;background:#eef2f7;padding:9px 11px;font-size:12px;color:#253247}.swatch{width:26px;height:26px;border-radius:50%;border:2px solid white;box-shadow:0 0 0 1px #cbd5e1}.swatch.active{box-shadow:0 0 0 2px #2563eb}input[type=range]{width:100%}select{padding:8px;border:1px solid #dce2eb;border-radius:9px;background:white}#file{display:none}
+</style></head><body>
+<canvas id="c"></canvas>
+<div id="top"><div class="panel group"><button class="btn" id="menu">☰</button><span class="brand">RoughSpace</span></div><div class="panel group" style="margin-left:auto"><button class="btn" id="undo">↶</button><button class="btn" id="redo">↷</button><span class="readout" id="zoom">100%</span></div></div>
+<div id="tools" class="panel">
+<button class="tool active" data-tool="pen"><b>✎</b>Pen</button><button class="tool" data-tool="pencil"><b>✐</b>Pencil</button><button class="tool" data-tool="marker"><b>▰</b>Marker</button><button class="tool" data-tool="eraser"><b>▱</b>Eraser</button><button class="tool" data-tool="area"><b>◯</b>Area</button><button class="tool" data-tool="hand"><b>✋</b>Move</button>
+</div>
+<aside id="drawer" class="panel">
+<div class="actions" style="justify-content:space-between;align-items:center"><strong>Notebook settings</strong><button class="btn" id="close">×</button></div>
+<div class="section"><p class="heading">INK COLOUR</p><div class="actions" id="palette"><button class="swatch active" style="background:#172033" data-color="#172033"></button><button class="swatch" style="background:#2563eb" data-color="#2563eb"></button><button class="swatch" style="background:#dc2626" data-color="#dc2626"></button><button class="swatch" style="background:#059669" data-color="#059669"></button><button class="swatch" style="background:#7c3aed" data-color="#7c3aed"></button><button class="swatch" style="background:#ea580c" data-color="#ea580c"></button></div></div>
+<div class="section"><p class="heading">STROKE WIDTH</p><input id="width" type="range" min="1" max="24" value="3"><span id="widthval">3 px</span></div>
+<div class="section"><p class="heading">PAPER</p><div class="actions"><select id="paper"><option value="grid">Faint grid</option><option value="dots">Dots</option><option value="ruled">Ruled</option><option value="blank">Blank</option></select><select id="theme"><option value="#ffffff">White</option><option value="#fffaf0">Cream</option><option value="#171c28">Dark</option></select></div></div>
+<div class="section"><p class="heading">IMPORT / EXPORT</p><div class="actions"><button class="action" id="import">Add image</button><button class="action" id="png">Export PNG</button><button class="action" id="backup">Backup JSON</button><button class="action" id="restore">Restore JSON</button></div><p style="font-size:11px;color:#69778b;line-height:1.5">Your notes are stored in this browser on this device. Back up regularly. Imported images are stored locally.</p></div>
+<div class="section"><p class="heading">VIEW</p><div class="actions"><button class="action" id="reset">Reset zoom</button><button class="action" id="clear">Clear sheet</button></div></div>
+<input id="file" type="file" accept="image/*">
+</aside>
+<script>
+(()=>{
+const c=document.getElementById('c'),x=c.getContext('2d'),$=id=>document.getElementById(id);
+let dpr=1,W=innerWidth,H=innerHeight,cam={x:0,y:0,s:1},tool='pen',color='#172033',width=3,items=[],history=[],future=[],active=null,pointers=new Map(),gesture=null,theme='#ffffff',paper='grid';
+const key='roughspace-data-v1',clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+function save(){try{localStorage.setItem(key,JSON.stringify({items,cam,theme,paper}));}catch(e){alert('Storage is full. Export a backup and remove large images.');}}
+function load(){try{const a=JSON.parse(localStorage.getItem(key)||'{}');items=a.items||[];cam=a.cam||cam;theme=a.theme||theme;paper=a.paper||paper;}catch(e){}}
+function snap(){history.push(JSON.stringify(items));if(history.length>60)history.shift();future=[]}
+function undo(){if(!history.length)return;future.push(JSON.stringify(items));items=JSON.parse(history.pop());draw()}
+function redo(){if(!future.length)return;history.push(JSON.stringify(items));items=JSON.parse(future.pop());draw()}
+function world(px,py){return{x:px/cam.s+cam.x,y:py/cam.s+cam.y}}
+function screen(p){return{x:(p.x-cam.x)*cam.s,y:(p.y-cam.y)*cam.s}}
+function resize(){dpr=Math.min(devicePixelRatio||1,3);W=innerWidth;H=innerHeight;c.width=W*dpr;c.height=H*dpr;c.style.width=W+'px';c.style.height=H+'px';x.setTransform(dpr,0,0,dpr,0,0);draw()}
+function background(){x.fillStyle=theme;x.fillRect(0,0,W,H);if(paper==='blank')return;const step=28*cam.s;if(step<5)return;const ox=(( -cam.x*cam.s)%step+step)%step,oy=(( -cam.y*cam.s)%step+step)%step;x.save();x.strokeStyle=theme==='#171c28'?'#ffffff16':'#aab4c322';x.fillStyle=theme==='#171c28'?'#ffffff28':'#8b98aa55';x.lineWidth=1;if(paper==='dots'){for(let a=ox;a<W;a+=step)for(let b=oy;b<H;b+=step){x.beginPath();x.arc(a,b,1,0,Math.PI*2);x.fill()}}else if(paper==='ruled'){for(let b=oy;b<H;b+=step){x.beginPath();x.moveTo(0,b);x.lineTo(W,b);x.stroke()}}else{for(let a=ox;a<W;a+=step){x.beginPath();x.moveTo(a,0);x.lineTo(a,H);x.stroke()}for(let b=oy;b<H;b+=step){x.beginPath();x.moveTo(0,b);x.lineTo(W,b);x.stroke()}}x.restore()}
+function drawItem(i){if(i.type==='image'){const im=new Image();im.onload=()=>{const p=screen({x:i.x,y:i.y});x.drawImage(im,p.x,p.y,i.w*cam.s,i.h*cam.s)};im.src=i.src;return}if(!i.points?.length)return;x.save();x.globalAlpha=i.alpha??1;x.strokeStyle=i.color;x.lineWidth=i.width*cam.s;x.lineCap='round';x.lineJoin='round';if(i.tool==='pencil'){x.globalAlpha=.55;x.lineWidth=Math.max(.7,i.width*.65)*cam.s}x.beginPath();const p=screen(i.points[0]);x.moveTo(p.x,p.y);for(let k=1;k<i.points.length;k++){const q=screen(i.points[k]);x.lineTo(q.x,q.y)}if(i.points.length===1)x.lineTo(p.x+.1,p.y+.1);x.stroke();x.restore()}
+function draw(){background();items.forEach(drawItem);if(active){drawItem(active)}$('zoom').textContent=Math.round(cam.s*100)+'%'}
+function commit(){save();draw()}
+function setTool(t){tool=t;document.querySelectorAll('.tool').forEach(b=>b.classList.toggle('active',b.dataset.tool===t))}
+document.querySelectorAll('.tool').forEach(b=>b.onclick=()=>setTool(b.dataset.tool));
+$('menu').onclick=()=>$('drawer').classList.toggle('open');$('close').onclick=()=>$('drawer').classList.remove('open');
+$('undo').onclick=undo;$('redo').onclick=redo;
+$('palette').onclick=e=>{const b=e.target.closest('[data-color]');if(!b)return;color=b.dataset.color;document.querySelectorAll('.swatch').forEach(z=>z.classList.toggle('active',z===b))};
+$('width').oninput=e=>{width=+e.target.value;$('widthval').textContent=width+' px'};
+$('paper').onchange=e=>{paper=e.target.value;commit()};$('theme').onchange=e=>{theme=e.target.value;commit()};
+$('reset').onclick=()=>{cam={x:0,y:0,s:1};commit()};
+$('clear').onclick=()=>{if(confirm('Clear all writing and images on this sheet?')){snap();items=[];commit()}};
+function eraseAt(p,r){items=items.filter(i=>{if(i.type==='image')return !(p.x>=i.x&&p.x<=i.x+i.w&&p.y>=i.y&&p.y<=i.y+i.h);return !i.points?.some(q=>Math.hypot(q.x-p.x,q.y-p.y)<r)})}
+function pointerDown(e){e.preventDefault();c.setPointerCapture(e.pointerId);pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===2){active=null;const a=[...pointers.values()];gesture={dist:Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y),scale:cam.s,mid:{x:(a[0].x+a[1].x)/2,y:(a[0].y+a[1].y)/2},anchor:world((a[0].x+a[1].x)/2,(a[0].y+a[1].y)/2)};return}if(pointers.size>1)return;const p=world(e.clientX,e.clientY);if(tool==='hand'){gesture={x:e.clientX,y:e.clientY,cx:cam.x,cy:cam.y};return}if(tool==='eraser'||tool==='area'){snap();eraseAt(p,(tool==='area'?38:width*2)/cam.s);commit();return}snap();active={type:'stroke',tool,color,width,alpha:tool==='marker'?.25:tool==='pencil'?.65:1,points:[p]};draw()}
+function pointerMove(e){if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===2&&gesture){const a=[...pointers.values()],mid={x:(a[0].x+a[1].x)/2,y:(a[0].y+a[1].y)/2},dist=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);cam.s=clamp(gesture.scale*dist/Math.max(1,gesture.dist),.25,6);cam.x=gesture.anchor.x-mid.x/cam.s;cam.y=gesture.anchor.y-mid.y/cam.s;draw();return}if(tool==='hand'&&gesture){cam.x=gesture.cx-(e.clientX-gesture.x)/cam.s;cam.y=gesture.cy-(e.clientY-gesture.y)/cam.s;draw();return}if(active){active.points.push(world(e.clientX,e.clientY));draw()}}
+function pointerUp(e){pointers.delete(e.pointerId);if(pointers.size<2)gesture=null;if(active&&pointers.size===0){items.push(active);active=null;save();draw()}else if(tool==='hand'&&pointers.size===0){gesture=null;save()}}
+c.addEventListener('pointerdown',pointerDown);c.addEventListener('pointermove',pointerMove);c.addEventListener('pointerup',pointerUp);c.addEventListener('pointercancel',pointerUp);
+c.addEventListener('wheel',e=>{e.preventDefault();const p=world(e.clientX,e.clientY),s=clamp(cam.s*Math.exp(-e.deltaY*.001),.25,6);cam.s=s;cam.x=p.x-e.clientX/s;cam.y=p.y-e.clientY/s;draw()},{passive:false});
+$('import').onclick=()=>$('file').click();$('file').onchange=async e=>{const f=e.target.files[0];if(!f)return;const src=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f)});const im=new Image();im.onload=()=>{snap();const p=world(W/2,H/2),s=Math.min(1,W*.8/im.width);items.push({type:'image',src,x:p.x-im.width*s/2,y:p.y-im.height*s/2,w:im.width*s,h:im.height*s});commit()};im.src=src;e.target.value=''};
+$('png').onclick=()=>{const a=document.createElement('a');a.href=c.toDataURL('image/png');a.download='roughspace.png';a.click()};
+$('backup').onclick=()=>{const a=document.createElement('a'),u=URL.createObjectURL(new Blob([JSON.stringify({items,cam,theme,paper})],{type:'application/json'}));a.href=u;a.download='roughspace-backup.json';a.click();URL.revokeObjectURL(u)};
+$('restore').onclick=()=>{const f=document.createElement('input');f.type='file';f.accept='application/json';f.onchange=async()=>{try{const a=JSON.parse(await f.files[0].text());snap();items=a.items||[];cam=a.cam||cam;theme=a.theme||theme;paper=a.paper||paper;commit()}catch(e){alert('Invalid backup file')}};f.click()};
+document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();e.shiftKey?redo():undo()}});
+load();$('paper').value=paper;$('theme').value=theme;resize();addEventListener('resize',resize);
+if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
+})();
+</script></body></html>
